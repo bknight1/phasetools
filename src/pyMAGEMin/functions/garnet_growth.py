@@ -153,7 +153,7 @@ def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
 
 
 class GarnetGenerator:
-    def __init__(self, Pi, Ti, ti, data, X, Xoxides, sys_in,
+    def __init__(self, Pi, Ti, ti, data, X, Xoxides, sys_in, rm_list=None,
                  t_start_growth=None, t_end_growth=None,
                  r_min=10, r_max=100, garnet_classes=99, nR_diff=99, fractionate=False):
         self.Pi = Pi
@@ -170,6 +170,20 @@ class GarnetGenerator:
         self.garnet_classes = garnet_classes
         self.nR_diff = nR_diff
         self.fractionate = fractionate
+        self.rm_list = rm_list
+
+        # if self.t_start_growth is not None and self.t_end_growth is not None:
+        #     # If both t_start_growth and t_end_growth are specified, we only consider the data within this time range
+        #     self._mask = (self.ti >= self.t_start_growth) & (self.ti <= self.t_end_growth)
+        # elif self.t_start_growth is not None:
+        #     # If only t_start_growth is specified, we consider data from this time onwards
+        #     self._mask = self.ti >= self.t_start_growth
+        # elif self.t_end_growth is not None:
+        #     # If only t_end_growth is specified, we consider data up to this time
+        #     self._mask = self.ti <= self.t_end_growth
+        # else:
+        #     # If neither is specified, we use the full range of indices
+        #     self._mask = np.ones_like(self.ti, dtype=bool)
 
         ### calculate the garnet data over path
         self.extract_garnet_data()
@@ -181,8 +195,10 @@ class GarnetGenerator:
         (self.gt_mol_frac, self.gt_wt_frac, self.gt_vol_frac,
          self.d_gt_mol_frac, self.d_gt_wt_frac,
          self.Mgi, self.Mni, self.Fei, self.Cai) = garnet_generator.gt_along_path(
-            self.Pi, self.Ti, self.data, self.X, self.Xoxides,
-            self.sys_in, fractionate=self.fractionate
+            self.Pi, 
+            self.Ti, 
+            self.data, self.X, self.Xoxides,
+            self.sys_in, fractionate=self.fractionate, rm_list=self.rm_list,
         )
 
         if self.gt_vol_frac[0] > 0:
@@ -245,9 +261,20 @@ class GarnetGenerator:
             Concentrations (array): An array with the element concentrations and PTt data at each retrograde step.
         """
 
+        ### add in a mask based on self.t_start_growth and self.t_end_growth
+        if self.t_start_growth is not None and self.t_end_growth is not None:
+            time_mask = (self.ti >= self.t_start_growth) & (self.ti <= self.t_end_growth)
+        elif self.t_start_growth is not None:
+            # If only t_start_growth is specified, we consider data from this time onwards
+            time_mask = self.ti >= self.t_start_growth
+        elif self.t_end_growth is not None:
+            time_mask = self.ti <= self.t_end_growth
+        else:
+            time_mask = np.ones_like(self.ti, dtype=bool)
 
-        GVi = np.array(self.gt_vol_frac)
-        # GVn = GVi / GVi.max()
+        GVi = np.array(self.gt_vol_frac)[time_mask]
+        if GVi[0] > 0:
+            GVi = GVi - GVi[0]
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = np.where(GVn == 1)[0][0]
@@ -255,39 +282,15 @@ class GarnetGenerator:
         
         ind = np.arange(last_zero_idx, first_one_idx+1)
 
-        if self.t_start_growth is not None and self.t_end_growth is not None:
-            # If both t_start_growth and t_end_growth are specified, we only consider the data within this time range
-            t_start = self.t_start_growth
-            t_end = self.t_end_growth
-            # Find indices where time is within the specified range
-            time_mask = (self.ti >= t_start) & (self.ti <= t_end)
-            # Apply the mask to the indices
-            ind = ind[time_mask[ind]]
-        elif self.t_start_growth is not None:
-            # If only t_start_growth is specified, we consider data from this time onwards
-            t_start = self.t_start_growth
-            time_mask = self.ti >= t_start
-            ind = ind[time_mask[ind]]
-        elif self.t_end_growth is not None:
-            # If only t_end_growth is specified, we consider data up to this time
-            t_end = self.t_end_growth
-            time_mask = self.ti <= t_end
-            ind = ind[time_mask[ind]]
-        else:
-            # If neither is specified, we use the full range of indices
-            ind = slice(last_zero_idx, first_one_idx+1)
-        
-        # ind = slice(last_zero_idx, first_one_idx+1)
-
         GVG = GVn[ind]
 
-        tG = self.ti[ind]
-        TG = self.Ti[ind]
-        PG = self.Pi[ind]
-        MnG = np.array(self.Mni)[ind]
-        MgG = np.array(self.Mgi)[ind]
-        FeG = np.array(self.Fei)[ind]
-        CaG = np.array(self.Cai)[ind]
+        tG = self.ti[time_mask][ind]
+        TG = self.Ti[time_mask][ind]
+        PG = self.Pi[time_mask][ind]
+        MnG = np.array(self.Mni)[time_mask][ind]
+        MgG = np.array(self.Mgi)[time_mask][ind]
+        FeG = np.array(self.Fei)[time_mask][ind]
+        CaG = np.array(self.Cai)[time_mask][ind]
 
 
         ### If we go outside garnet-in area, we need to fill the zero data with the last non-zero value
@@ -336,7 +339,7 @@ class GarnetGenerator:
         Returns:
             Concentrations (array): An array with the element concentrations and PTt data at each retrograde step.
         """
-
+        ### add in a mask based on self.t_start_growth and self.t_end_growth
         GVi = np.array(self.gt_vol_frac)
         GVn = self._compute_normalized_GVG(GVi)
 
@@ -344,8 +347,7 @@ class GarnetGenerator:
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
 
         if self.t_end_growth is not None:
-            t_end = self.t_end_growth
-            time_mask = self.ti >= t_end
+            time_mask = self.ti >= self.t_end_growth
             ind = time_mask
         else:
             ind = slice(first_one_idx, None)
@@ -353,7 +355,6 @@ class GarnetGenerator:
 
 
         GVG = GVn[ind]
-
         tG = self.ti[ind]
         TG = self.Ti[ind]
         PG = self.Pi[ind]
@@ -418,77 +419,36 @@ class GarnetGenerator:
             garnets (list): List of garnet data dictionaries.
         """
 
-        GVi = np.array(self.gt_vol_frac)
+        ### add in a mask based on self.t_start_growth and self.t_end_growth
+        if self.t_start_growth is not None and self.t_end_growth is not None:
+            time_mask = (self.ti >= self.t_start_growth) & (self.ti <= self.t_end_growth)
+        elif self.t_start_growth is not None:
+            # If only t_start_growth is specified, we consider data from this time onwards
+            time_mask = self.ti >= self.t_start_growth
+        elif self.t_end_growth is not None:
+            time_mask = self.ti <= self.t_end_growth
+        else:
+            time_mask = np.ones_like(self.ti, dtype=bool)
+
+        GVi = np.array(self.gt_vol_frac)[time_mask]
+        if GVi[0] > 0:
+            GVi = GVi - GVi[0]
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = np.where(GVn == 1)[0][0]
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
-
+        
         ind = np.arange(last_zero_idx, first_one_idx+1)
 
-        if self.t_start_growth is not None and self.t_end_growth is not None:
-            # If both t_start_growth and t_end_growth are specified, we only consider the data within this time range
-            t_start = self.t_start_growth
-            t_end = self.t_end_growth
-            # Find indices where time is within the specified range
-            time_mask = (self.ti >= t_start) & (self.ti <= t_end)
-            # Apply the mask to the indices
-            ind = ind[time_mask[ind]]
-        elif self.t_start_growth is not None:
-            # If only t_start_growth is specified, we consider data from this time onwards
-            t_start = self.t_start_growth
-            time_mask = self.ti >= t_start
-            ind = ind[time_mask[ind]]
-        elif self.t_end_growth is not None:
-            # If only t_end_growth is specified, we consider data up to this time
-            t_end = self.t_end_growth
-            time_mask = self.ti <= t_end
-            ind = ind[time_mask[ind]]
-        else:
-            # If neither is specified, we use the full range of indices
-            ind = slice(last_zero_idx, first_one_idx+1)
-
-
-        # if formation_times is None:
-        #     ind = np.arange(last_zero_idx, first_one_idx+1)
-        #     GVG = GVn[ind]
-
-
-        # #     ### takes into consideration where garnet volume increases (prograde and potentially retrograde)
-
-        # #     # dGVn = np.diff(GVi)
-
-        # #     # growth_inds = np.where(dGVn > 0)[0]
-
-        # #     # growth_inds = growth_inds + 1 
-
-        # #     # ind = np.insert(growth_inds, 0 , growth_inds[0] - 1)
-
-        # #     # arr = GVn[ind]  # your array
-
-        # #     # # Find the index of the first occurrence of 1
-        # #     # first_one_idx = np.where(arr == 1)[0][0]
-
-        # #     # # Create a copy to avoid modifying the original
-        # #     # GVG = arr.copy()
-
-        # #     # # Add 1 to all values after the first 1
-        # #     # GVG[first_one_idx+1:] += 1
-
-        # else:
-        #     ind = slice(last_zero_idx, None)
-        #     GVG = GVn[ind]
-
-        
         GVG = GVn[ind]
-        tG = self.ti[ind]
-        TG = self.Ti[ind]
-        PG = self.Pi[ind]
-        MnG = np.array(self.Mni)[ind]
-        MgG = np.array(self.Mgi)[ind]
-        FeG = np.array(self.Fei)[ind]
-        Cai = np.array(self.Cai)[ind]
-        # GVG = np.array(GVG)[ind]
+
+        tG = self.ti[time_mask][ind]
+        TG = self.Ti[time_mask][ind]
+        PG = self.Pi[time_mask][ind]
+        MnG = np.array(self.Mni)[time_mask][ind]
+        MgG = np.array(self.Mgi)[time_mask][ind]
+        FeG = np.array(self.Fei)[time_mask][ind]
+        CaG = np.array(self.Cai)[time_mask][ind]
 
 
         # Generate radius classes
@@ -575,49 +535,36 @@ class GarnetGenerator:
             path (str, optional): Path to save the figure.
         """
 
-        GVi = np.array(self.gt_vol_frac)
+        ### add in a mask based on self.t_start_growth and self.t_end_growth
+        if self.t_start_growth is not None and self.t_end_growth is not None:
+            time_mask = (self.ti >= self.t_start_growth) & (self.ti <= self.t_end_growth)
+        elif self.t_start_growth is not None:
+            # If only t_start_growth is specified, we consider data from this time onwards
+            time_mask = self.ti >= self.t_start_growth
+        elif self.t_end_growth is not None:
+            time_mask = self.ti <= self.t_end_growth
+        else:
+            time_mask = np.ones_like(self.ti, dtype=bool)
 
+        GVi = np.array(self.gt_vol_frac)[time_mask]
+        if GVi[0] > 0:
+            GVi = GVi - GVi[0]
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = np.where(GVn == 1)[0][0]
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
-        # ind = np.arange(last_zero_idx, first_one_idx+1)
-
-        # GVG = GVn[ind]
-
+        
         ind = np.arange(last_zero_idx, first_one_idx+1)
-
-        if self.t_start_growth is not None and self.t_end_growth is not None:
-            # If both t_start_growth and t_end_growth are specified, we only consider the data within this time range
-            t_start = self.t_start_growth
-            t_end = self.t_end_growth
-            # Find indices where time is within the specified range
-            time_mask = (self.ti >= t_start) & (self.ti <= t_end)
-            # Apply the mask to the indices
-            ind = ind[time_mask[ind]]
-        elif self.t_start_growth is not None:
-            # If only t_start_growth is specified, we consider data from this time onwards
-            t_start = self.t_start_growth
-            time_mask = self.ti >= t_start
-            ind = ind[time_mask[ind]]
-        elif self.t_end_growth is not None:
-            # If only t_end_growth is specified, we consider data up to this time
-            t_end = self.t_end_growth
-            time_mask = self.ti <= t_end
-            ind = ind[time_mask[ind]]
-        else:
-            # If neither is specified, we use the full range of indices
-            ind = slice(last_zero_idx, first_one_idx+1)
 
         GVG = GVn[ind]
 
-
-        tG = self.ti[ind]
-        TG = self.Ti[ind]
-        PG = self.Pi[ind]
-        MnG = np.array(self.Mni)[ind]
-        MgG = np.array(self.Mgi)[ind]
-        FeG = np.array(self.Fei)[ind]
+        tG = self.ti[time_mask][ind]
+        TG = self.Ti[time_mask][ind]
+        PG = self.Pi[time_mask][ind]
+        MnG = np.array(self.Mni)[time_mask][ind]
+        MgG = np.array(self.Mgi)[time_mask][ind]
+        FeG = np.array(self.Fei)[time_mask][ind]
+        CaG = np.array(self.Cai)[time_mask][ind]
 
         
         n_classes = self.garnet_classes
@@ -722,6 +669,8 @@ class GarnetGenerator:
         
         # Add a single legend for unique labels
         axs[2, 1].legend(['Mn', 'Mg', 'Fe', 'Ca'], loc='upper right')
+
+        axs[2, 1].grid(True)
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 

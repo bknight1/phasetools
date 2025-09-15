@@ -5,6 +5,7 @@ import juliacall
 from juliacall import Main as jl, convert as jlconvert
 from .bulk_rock_functions import *
 
+from scipy.optimize import root_scalar
 
 from pyMAGEMin import MAGEMin_C
 
@@ -27,17 +28,18 @@ def phase_frac(phase, MAGEMinOutput, sys_in):
         if sys_in.casefold() == 'wt':
             data = MAGEMinOutput.ph_frac_wt[phase_ind]
         elif sys_in.casefold() == 'vol':
-            ph_names = MAGEMinOutput.ph
-            n_ph = len(ph_names)
-            V = np.zeros((n_ph, 1))
-            for i, ph in enumerate(ph_names):
-                ids = [j for j, p in enumerate(MAGEMinOutput.ph) if p == ph]
-                if ids:
-                    rho = sum(MAGEMinOutput.SS_vec[j].rho if j < MAGEMinOutput.n_SS 
-                            else MAGEMinOutput.PP_vec[j - MAGEMinOutput.n_SS].rho for j in ids) / len(ids)
-                    V[i, 0] = sum(MAGEMinOutput.ph_frac_wt[j] for j in ids) / rho
-            V /= np.sum(V)
-            data = V[phase_ind]
+            data = MAGEMinOutput.ph_frac_vol[phase_ind]
+            # ph_names = MAGEMinOutput.ph
+            # n_ph = len(ph_names)
+            # V = np.zeros((n_ph, 1))
+            # for i, ph in enumerate(ph_names):
+            #     ids = [j for j, p in enumerate(MAGEMinOutput.ph) if p == ph]
+            #     if ids:
+            #         rho = sum(MAGEMinOutput.SS_vec[j].rho if j < MAGEMinOutput.n_SS 
+            #                 else MAGEMinOutput.PP_vec[j - MAGEMinOutput.n_SS].rho for j in ids) / len(ids)
+            #         V[i, 0] = sum(MAGEMinOutput.ph_frac_wt[j] for j in ids) / rho
+            # V /= np.sum(V)
+            # data = V[phase_ind]
         else:
             data = MAGEMinOutput.ph_frac[phase_ind]
     except:
@@ -48,14 +50,14 @@ class MAGEMinGarnetCalculator:
     def __init__(self):
         pass
 
-    def generate_2D_grid_gt_endmembers(self, P, T, data, X, Xoxides, sys_in):
+    def generate_2D_grid_gt_endmembers(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
         """
         Generates a 2D grid of garnet endmember mole fractions by calling MAGEMin.
         Returns arrays for garnet mole, weight, volume fractions and endmember fractions.
         """
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
-        out = MAGEMin_C.multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
+        out = MAGEMin_C.multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in, rm_list=rm_list)
         sys.stdout.flush()
 
         gt_mol_frac = np.zeros_like(P)
@@ -80,13 +82,13 @@ class MAGEMinGarnetCalculator:
 
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, py_arr, alm_arr, spss_arr, gr_arr, kho_arr
 
-    def generate_2D_grid_gt_elements(self, P, T, data, X, Xoxides, sys_in):
+    def generate_2D_grid_gt_elements(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
         """
         Generates 2D grids for garnet elements based on endmember fractions.
         Returns garnet fractions plus element molar fractions.
         """
         gt_mol_frac, gt_wt_frac, gt_vol_frac, py_arr, alm_arr, spss_arr, gr_arr, kho_arr = \
-            self.generate_2D_grid_gt_endmembers(P, T, data, X, Xoxides, sys_in)
+            self.generate_2D_grid_gt_endmembers(P, T, data, X, Xoxides, sys_in, rm_list)
             
         Mgi = np.zeros_like(P)
         Mni = np.zeros_like(P)
@@ -116,14 +118,16 @@ class MAGEMinGarnetCalculator:
 
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai
 
-    def gt_single_point_calc_endmembers(self, P, T, data, X, Xoxides, sys_in):
+    def gt_single_point_calc_endmembers(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
         """
         Calculate garnet endmember fractions for a single P-T point.
         Returns fractions and the full MAGEMin output.
         """
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
-        out = MAGEMin_C.single_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in)
+
+
+        out = MAGEMin_C.single_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in, rm_list=rm_list)
 
 
         sys.stdout.flush()
@@ -141,13 +145,13 @@ class MAGEMinGarnetCalculator:
         
         return gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out
 
-    def gt_single_point_calc_elements(self, P, T, data, X, Xoxides, sys_in):
+    def gt_single_point_calc_elements(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
         """
         Calculate garnet element fractions for a single P-T point.
         Returns garnet fractions and molar fractions of elements.
         """
         gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out = \
-            self.gt_single_point_calc_endmembers(P, T, data, X, Xoxides, sys_in)
+            self.gt_single_point_calc_endmembers(P, T, data, X, Xoxides, sys_in, rm_list)
         
         garnet_fractions = {"py": py, "alm": alm, "gr": gr, "spss": spss, "kho": kho}
         
@@ -171,7 +175,7 @@ class MAGEMinGarnetCalculator:
         
         return gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out
 
-    def gt_along_path(self, P, T, data, X, Xoxides, sys_in, fractionate=False):
+    def gt_along_path(self, P, T, data, X, Xoxides, sys_in, fractionate=False, rm_list=None):
         """
         Calculates garnet composition and fractionation along a P-T path.
         Returns arrays of garnet fractions and element mole fractions along the path.
@@ -194,14 +198,14 @@ class MAGEMinGarnetCalculator:
         ### loop over P-T points to get the garnet data
         for i in range(n_points):
             gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out = \
-                self.gt_single_point_calc_endmembers(P[i], T[i], data, X, Xoxides, sys_in)
+                self.gt_single_point_calc_endmembers(P[i], T[i], data, X, Xoxides, sys_in, rm_list)
 
             ### MAGEMin converts to a compatible format, so get those here
             Xoxides = out.oxides
             if sys_in == 'wt':
                 X = out.bulk_wt
             else:
-                x = out.bulk
+                X = out.bulk
             
 
             gt_mol_frac[i] = gt_frac
@@ -245,43 +249,67 @@ class PhaseFunctions:
     def __init__(self):
         pass
 
-    def find_phase_in(self, P, initial_T, data, phase, sys_in='mol', precision=1., verbose=False):
+    def find_phase_in(self, P, bracket, data, phase, sys_in='mol', tol=1e-2, verbose=False):
         """
-        Finds the solidus temperature (where the liquid fraction becomes zero).
-        """
-        solidus_T = float(initial_T)
-        out = MAGEMin_C.single_point_minimization(P, solidus_T, data)
-        phasefrac = phase_frac(phase=phase, MAGEMinOutput=out, sys_in=sys_in)
-        if phasefrac == 0:
-            raise ValueError(f'Increase initial temperature guess; phase fraction = {phasefrac}')
-        if phasefrac == 1:
-            warnings.warn(f'Decrease initial temperature guess; phase fraction = {phasefrac}')
-        while phasefrac > 0:
-            solidus_T -= precision
-            out = MAGEMin_C.single_point_minimization(P, solidus_T, data)
-            phasefrac = phase_frac(phase=phase, MAGEMinOutput=out, sys_in=sys_in)
-            if verbose:
-                print(f"phase frac: {phasefrac:.4f}, T: {solidus_T:.2f}")
-        return solidus_T
+        Finds the solidus temperature (where the phase fraction becomes greater than zero)
+        using a robust root-finding algorithm.
 
-    def find_phase_saturation(self, P, initial_T, data, phase, sys_in='mol', precision=1., verbose=False):
+        Parameters:
+            P: Pressure (kbar)
+            bracket: (T_low, T_high) tuple bracketing the solidus
+            data: MAGEMin data object
+            phase: str, phase name (e.g. 'liq')
+            sys_in: str, system units
+            tol: float, tolerance for convergence (in degrees)
+            verbose: bool, print progress
+
+        Returns:
+            solidus_T: float, solidus temperature (°C)
         """
-        Finds the liquidus temperature (where the liquid fraction becomes one).
-        """
-        liquidus_T = float(initial_T)
-        out = MAGEMin_C.single_point_minimization(P, liquidus_T, data)
-        phasefrac = phase_frac(phase=phase, MAGEMinOutput=out, sys_in=sys_in)
-        if phasefrac == 1:
-            raise ValueError(f'Decrease initial temperature guess; liquid fraction = {phasefrac}')
-        if phasefrac == 0:
-            warnings.warn(f'Increase initial temperature guess; liquid fraction = {phasefrac}')
-        while phasefrac < 1:
-            liquidus_T += precision
-            out = MAGEMin_C.single_point_minimization(P, liquidus_T, data)
+        def solidus_func(T):
+            out = MAGEMin_C.single_point_minimization(P, T, data)
             phasefrac = phase_frac(phase=phase, MAGEMinOutput=out, sys_in=sys_in)
             if verbose:
-                print(f"phase frac: {phasefrac:.4f}, T: {liquidus_T:.2f}")
-        return liquidus_T
+                print(f"phase frac: {phasefrac:.4f}, T: {T:.2f}")
+            return phasefrac - 1e-5  # Slightly above zero for numerical stability
+
+        T_low, T_high = bracket
+        result = root_scalar(solidus_func, bracket=[T_low, T_high], method='bisect', xtol=tol)
+        
+        if not result.converged:
+            raise RuntimeError("Solidus search did not converge. Adjust bracket or check function.")
+        
+        return result.root
+
+    def find_phase_saturation(self, P, bracket, data, phase, sys_in='mol', tol=1e-2, verbose=False):
+        """
+        Finds the liquidus temperature (where the phase fraction reaches unity)
+        using a robust root-finding algorithm.
+
+        Parameters:
+            P: Pressure (kbar)
+            bracket: (T_low, T_high) tuple bracketing the liquidus
+            data: MAGEMin data object
+            phase: str, phase name (e.g. 'liq')
+            sys_in: str, system units
+            tol: float, tolerance for convergence (in degrees)
+            verbose: bool, print progress
+
+        Returns:
+            liquidus_T: float, liquidus temperature (°C)
+        """
+        def liquidus_func(T):
+            out = MAGEMin_C.single_point_minimization(P, T, data)
+            phasefrac = phase_frac(phase=phase, MAGEMinOutput=out, sys_in=sys_in)
+            if verbose:
+                print(f"phase frac: {phasefrac:.4f}, T: {T:.2f}")
+            return phasefrac - (1.0 - 1e-5)  # Slightly below one for numerical stability
+
+        T_low, T_high = bracket
+        result = root_scalar(liquidus_func, bracket=[T_low, T_high], method='bisect', xtol=tol)
+        if not result.converged:
+            raise RuntimeError("Liquidus search did not converge. Adjust bracket or check function.")
+        return result.root
 
     def fractionate_phase(self, phase, d_mol_frac, d_wt_frac, out, X, sys_in):
         """
