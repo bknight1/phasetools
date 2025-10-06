@@ -273,14 +273,14 @@ class GarnetGenerator:
             time_mask = np.ones_like(self.ti, dtype=bool)
 
         GVi = np.array(self.gt_vol_frac)[time_mask]
-        if GVi[0] > 0:
-            GVi = GVi - GVi[0]
+        # if GVi[0] > 0:
+        #     GVi = GVi - GVi[0]
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = np.where(GVn == 1)[0][0]
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
         
-        ind = np.arange(last_zero_idx, first_one_idx+1)
+        ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         GVG = GVn[ind]
 
@@ -431,14 +431,14 @@ class GarnetGenerator:
             time_mask = np.ones_like(self.ti, dtype=bool)
 
         GVi = np.array(self.gt_vol_frac)[time_mask]
-        if GVi[0] > 0:
-            GVi = GVi - GVi[0]
+        # if GVi[0] > 0:
+        #     GVi = GVi - GVi[0]
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = np.where(GVn == 1)[0][0]
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
         
-        ind = np.arange(last_zero_idx, first_one_idx+1)
+        ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         GVG = GVn[ind]
 
@@ -554,7 +554,7 @@ class GarnetGenerator:
         first_one_idx = np.where(GVn == 1)[0][0]
         last_zero_idx = np.where(GVn[:first_one_idx] == 0)[0][-1]
         
-        ind = np.arange(last_zero_idx, first_one_idx+1)
+        ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         GVG = GVn[ind]
 
@@ -589,6 +589,7 @@ class GarnetGenerator:
         Mnrw = np.interp(t_arr, tG, MnG)
         Mgrw = np.interp(t_arr, tG, MgG)
         Ferw = np.interp(t_arr, tG, FeG)
+        Carw = np.interp(t_arr, tG, CaG)
 
         # --- Create the summary subplots ---
         fig, axs = plt.subplots(3, 2, figsize=(10, 15))
@@ -642,7 +643,7 @@ class GarnetGenerator:
             axs[2, 0].plot(rplt[ind_local], Mnrw[ind_local], '-b', label='Mn')
             axs[2, 0].plot(rplt[ind_local], Mgrw[ind_local], '-g', label='Mg')
             axs[2, 0].plot(rplt[ind_local], Ferw[ind_local], '-r', label='Fe')
-            axs[2, 0].plot(rplt[ind_local], (1 - Mnrw[ind_local] - Mgrw[ind_local] - Ferw[ind_local]), '-', c='gold', label='Ca')
+            axs[2, 0].plot(rplt[ind_local], (Carw[ind_local]), '-', c='gold', label='Ca')
         axs[2, 0].legend()
 
         # Subplot 6: Garnet composition
@@ -657,7 +658,7 @@ class GarnetGenerator:
             ax.plot(rplt[ind_local], Mnrw[ind_local], 'bx', label='Mn')
             ax.plot(rplt[ind_local], Mgrw[ind_local], 'gx', label='Mg')
             ax.plot(rplt[ind_local], Ferw[ind_local], 'rx', label='Fe')
-            ax.plot(rplt[ind_local], (1 - Mnrw[ind_local] - Mgrw[ind_local] - Ferw[ind_local]), 'x', c='gold', linewidth=2, label='Ca')
+            ax.plot(rplt[ind_local], (Carw[ind_local]), 'x', c='gold', linewidth=2, label='Ca')
 
         # Add a single legend for unique labels
         axs[2, 0].legend(['Mn', 'Mg', 'Fe', 'Ca'], loc='upper right')
@@ -665,7 +666,7 @@ class GarnetGenerator:
         axs[2, 1].plot(rplt[ind_local], Mnrw[ind_local], 'b-', label='Mn')
         axs[2, 1].plot(rplt[ind_local], Mgrw[ind_local], 'g-', label='Mg')
         axs[2, 1].plot(rplt[ind_local], Ferw[ind_local], 'r-', label='Fe')
-        axs[2, 1].plot(rplt[ind_local], (1 - Mnrw[ind_local] - Mgrw[ind_local] - Ferw[ind_local]), '-', c='gold', linewidth=2, label='Ca')
+        axs[2, 1].plot(rplt[ind_local], (Carw[ind_local]), '-', c='gold', linewidth=2, label='Ca')
         
         # Add a single legend for unique labels
         axs[2, 1].legend(['Mn', 'Mg', 'Fe', 'Ca'], loc='upper right')

@@ -141,18 +141,19 @@ def convert_FeOt_to_FeO_Fe2O3(FeOt_wt_percent, FeO_ratio, Fe2O3_ratio, total_mas
 
 # %%
 ### extract the molar fraction of each element we want to diffuse in the garnet from the end member crystals
-def calculate_molar_fractions(endmember_fractions):
+def calculate_molar_fractions(endmember_fractions, input_type='mol'):
     """
     Calculate molar fractions of Mg, Ca, Fe, and Mn in a garnet mixture.
 
-    :param garnet_fractions: Dictionary with fractionation amounts of Py, Alm, Gr, Spss, and Kho.
+    :param endmember_fractions: Dictionary with fractionation amounts of Py, Alm, Gr, Spss, and Kho.
+    :param input_type: Type of input fractions - 'mol' for mole percentages, 'wt' for weight percentages.
     :return: Dictionary with molar fractions XMg, XCa, XFe, and XMn.
 
     ### Example usage:
-    garnet_fractions = {'Py': 0.2, 'Alm': 0.3, 'Gr': 0.1, 'Spss': 0.2, 'Kho': 0.2}
-    result = calculate_molar_fractions(garnet_fractions)
+    garnet_fractions = {'py': 0.2, 'alm': 0.3, 'gr': 0.1, 'spss': 0.2, 'kho': 0.2}
+    result = calculate_molar_fractions(garnet_fractions, input_type='mol')
 
-    ### Based on TC metapelite description:
+    ### Based on TC metapelite and igneous description:
      E-m    Formula                   Mixing sites
                         X                         Y
                         Mg    Fe    Mn    Ca      Al    Fe3
@@ -162,27 +163,81 @@ def calculate_molar_fractions(endmember_fractions):
     gr     Ca3Al2Si3O12   0     0     0     3       2     0
     kho    Mg3Fe2Si3O12   3     0     0     0       0     2
 
+    E-m    Formula                    Mixing sites
+                              M1            M2
+                              Mg  Fe  Ca    Al  Cr  Fe3 Mg  Ti
+    py    Mg3Al2Si3O12         3   0   0     2   0   0   0   0
+    alm   Fe3Al2Si3O12         0   3   0     2   0   0   0   0
+    gr    Ca3Al2Si3O12         0   0   3     2   0   0   0   0
+    andr  Ca3Fe2Si3O12         0   0   3     0   0   2   0   0
+    knom  Mg3Cr2Si3O12         3   0   0     0   2   0   0   0
+    tig   Mg3.5AlTi0.5Si3O12   3   0   0     1   0   0   1/2 1/2
+    
+
     """
-    # Initialize molar amounts of Mg, Ca, Fe, and Mn
-    molar_amounts = {'Mg': 0, 'Ca': 0, 'Fe': 0, 'Mn': 0}
+    # Define molecular weights of garnet endmembers (g/mol)
+    endmember_mw = {
+        'py': 403.13,   # Pyrope Mg3Al2Si3O12
+        'alm': 497.76,  # Almandine Fe3Al2Si3O12  
+        'gr': 450.45,   # Grossular Ca3Al2Si3O12
+        'spss': 495.05, # Spessartine Mn3Al2Si3O12
+        'kho': 403.1274,  # Khoharite Mg3Fe2Si3O12
+        'andr': 508.18,   # Andradite Ca3Fe2Si3O12
+        'knom': 412.00,   # Knorringite Mg3Cr2Si3O12
+        'tig': 401.13     # Titanium garnet Mg3.5AlTi0.5Si3O12
+    }
+    
+    # Convert weight percentages to mole percentages if needed
+    if input_type.lower() == 'wt':
+        # Convert wt% to mol% using the generic conversion function
+        components = list(endmember_fractions.keys())
+        wt_percents = list(endmember_fractions.values())
+        mol_percents = convert_wt_percent_to_mol_percent(wt_percents, components, endmember_mw)
+        mol_fractions = dict(zip(components, [mp/100 for mp in mol_percents]))
+    else:
+        # Input is already in mole percentages or fractions
+        mol_fractions = {k: v/100 if v > 1 else v for k, v in endmember_fractions.items()}
+
+    # Initialize molar amounts of Mg, Ca, Fe, and Mn (and other elements if present)
+    molar_amounts = {'Mg': 0, 'Ca': 0, 'Fe': 0, 'Mn': 0, 'Cr': 0, 'Ti': 0}
 
     # Add contributions from each garnet type
-    ### Based on CFMMnASO system
-    molar_amounts['Mg'] += endmember_fractions['py'] * 3  # 3 Mg in Pyrope
-    molar_amounts['Fe'] += endmember_fractions['alm'] * 3  # 3 Fe in Almandine
-    molar_amounts['Ca'] += endmember_fractions['gr'] * 3   # 3 Ca in Grossular
-    molar_amounts['Mn'] += endmember_fractions['spss'] * 3  # 3 Mn in Spessartine
-    molar_amounts['Mg'] += endmember_fractions['kho'] * 3   # 3 Mg in Khoharite 
-    # molar_amounts['Fe'] += endmember_fractions['Kho'] * 2   #  Effects of Fe3 are on the Y mixing site, which can be ignored (???)
+    ### Based on CFMMnASO system and extended endmembers
+    # Standard endmembers
+    if 'py' in mol_fractions:
+        molar_amounts['Mg'] += mol_fractions['py'] * 3  # 3 Mg in Pyrope
+    if 'alm' in mol_fractions:
+        molar_amounts['Fe'] += mol_fractions['alm'] * 3  # 3 Fe in Almandine
+    if 'gr' in mol_fractions:
+        molar_amounts['Ca'] += mol_fractions['gr'] * 3   # 3 Ca in Grossular
+    if 'spss' in mol_fractions:
+        molar_amounts['Mn'] += mol_fractions['spss'] * 3  # 3 Mn in Spessartine
+    if 'kho' in mol_fractions:
+        molar_amounts['Mg'] += mol_fractions['kho'] * 3   # 3 Mg in Khoharite 
+        # molar_amounts['Fe'] += mol_fractions['kho'] * 2   #  Effects of Fe3 are on the Y mixing site, which can be ignored (???)
+    
+    # Extended endmembers
+    if 'andr' in mol_fractions:
+        molar_amounts['Ca'] += mol_fractions['andr'] * 3  # 3 Ca in Andradite
+        # molar_amounts['Fe'] += mol_fractions['andr'] * 2  # 2 Fe3+ in Y-site (can be ignored for X-site calculations)
+    if 'knom' in mol_fractions:
+        molar_amounts['Mg'] += mol_fractions['knom'] * 3  # 3 Mg in Knorringite
+        # molar_amounts['Cr'] += mol_fractions['knom'] * 2  # 2 Cr in Y-site
+    if 'tig' in mol_fractions:
+        molar_amounts['Mg'] += mol_fractions['tig'] * 3.5  # 3.5 Mg in Titanium garnet (3 in M1, 0.5 in M2)
+        # molar_amounts['Ti'] += mol_fractions['tig'] * 0.5  # 0.5 Ti in M2-site
 
-    # Calculate total moles of these elements
-    total_moles = sum(molar_amounts.values())
+    # Calculate total moles of these elements (focusing on X-site elements for garnet zoning)
+    # Note: Only counting X-site elements (Mg, Ca, Fe, Mn) for traditional garnet zoning calculations
+    # Cr and Ti are typically in Y-site and less relevant for X-site diffusion modeling
+    x_site_elements = ['Mg', 'Ca', 'Fe', 'Mn']
+    total_moles = sum(molar_amounts[element] for element in x_site_elements)
 
     if total_moles == 0.:
-        molar_fractions = {element: 0. for element in molar_amounts.keys()}
+        molar_fractions = {element: 0. for element in x_site_elements}
     else:
-        # Calculate molar fractions
-        molar_fractions = {element: amount / total_moles for element, amount in molar_amounts.items()}
+        # Calculate molar fractions for X-site elements
+        molar_fractions = {element: molar_amounts[element] / total_moles for element in x_site_elements}
 
     return molar_fractions
 

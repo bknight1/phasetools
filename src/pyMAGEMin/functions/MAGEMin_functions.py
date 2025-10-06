@@ -96,6 +96,7 @@ class MAGEMinGarnetCalculator:
         Cai = np.zeros_like(P)
         for i in range(len(py_arr)):
 
+
             garnet_fractions = {"py": py_arr[i], "alm": alm_arr[i], "gr": gr_arr[i], "spss": spss_arr[i], "kho": kho_arr[i]}
             
             # Calculate the molar fractions of the elements in garnet
@@ -105,10 +106,10 @@ class MAGEMinGarnetCalculator:
                 mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
                 wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
 
-                Mgi[i] = wt_percent_list[0]
-                Mni[i] = wt_percent_list[1]
-                Fei[i] = wt_percent_list[2]
-                Cai[i] = wt_percent_list[3]
+                Mgi[i] = wt_percent_list[0]/100
+                Mni[i] = wt_percent_list[1]/100
+                Fei[i] = wt_percent_list[2]/100
+                Cai[i] = wt_percent_list[3]/100
 
             else:
                 Mgi[i] = mole_fractions["Mg"]
@@ -131,43 +132,48 @@ class MAGEMinGarnetCalculator:
 
 
         sys.stdout.flush()
-        gt_frac = gt_wt = gt_vol = py = alm = spss = gr = kho = 0.
+        gt_frac = gt_wt = gt_vol = 0.
         if 'g' in out.ph:
             gt_frac  = phase_frac(phase="g", MAGEMinOutput=out, sys_in='mol')
             gt_wt    = phase_frac(phase="g", MAGEMinOutput=out, sys_in='wt')
             gt_vol   = phase_frac(phase="g", MAGEMinOutput=out, sys_in='vol')
 
-            py  = extract_end_member(phase="g", MAGEMinOutput=out, end_member="py", sys_in=sys_in)
-            alm = extract_end_member(phase="g", MAGEMinOutput=out, end_member="alm", sys_in=sys_in)
-            spss= extract_end_member(phase="g", MAGEMinOutput=out, end_member="spss", sys_in=sys_in)
-            gr  = extract_end_member(phase="g", MAGEMinOutput=out, end_member="gr", sys_in=sys_in)
-            kho = extract_end_member(phase="g", MAGEMinOutput=out, end_member="kho", sys_in=sys_in)
-        
-        return gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out
+            ph_index = out.ph.index('g')
+
+            emNames = out.SS_vec[ph_index].emNames
+            emFrac = out.SS_vec[ph_index].emFrac
+            emFrac_wt = out.SS_vec[ph_index].emFrac_wt
+
+
+            emDict_mol = {name: frac for name, frac in zip(emNames, emFrac)}
+            emDict_wt  = {name: frac for name, frac in zip(emNames, emFrac_wt)}
+        else:
+            emDict_mol = {"py": 0., "alm": 0., "spss": 0., "gr": 0., "kho": 0.}
+            emDict_wt  = {"py": 0., "alm": 0., "spss": 0., "gr": 0., "kho": 0.}
+
+        return gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out
 
     def gt_single_point_calc_elements(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
         """
         Calculate garnet element fractions for a single P-T point.
         Returns garnet fractions and molar fractions of elements.
         """
-        gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out = \
+        gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out = \
             self.gt_single_point_calc_endmembers(P, T, data, X, Xoxides, sys_in, rm_list)
-        
-        garnet_fractions = {"py": py, "alm": alm, "gr": gr, "spss": spss, "kho": kho}
-        
-        # Calculate the molar fractions of the elements in garnet
-        mole_fractions = calculate_molar_fractions(garnet_fractions)
 
-        if sys_in == 'wt':
+
+        if (sys_in == 'wt') & (np.array(list(emDict_wt.values())).any() > 0.):
+            mole_fractions = calculate_molar_fractions(emDict_wt, 'wt')
             mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
             wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
 
-            Mg = wt_percent_list[0]
-            Mn = wt_percent_list[1]
-            Fe = wt_percent_list[2]
-            Ca = wt_percent_list[3]
+            Mg = wt_percent_list[0]/100
+            Mn = wt_percent_list[1]/100
+            Fe = wt_percent_list[2]/100
+            Ca = wt_percent_list[3]/100
 
         else:
+            mole_fractions = calculate_molar_fractions(emDict_mol, 'mol')
             Mg = mole_fractions["Mg"]
             Mn = mole_fractions["Mn"]
             Fe = mole_fractions["Fe"]
@@ -197,7 +203,7 @@ class MAGEMinGarnetCalculator:
         
         ### loop over P-T points to get the garnet data
         for i in range(n_points):
-            gt_frac, gt_wt, gt_vol, py, alm, spss, gr, kho, out = \
+            gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out = \
                 self.gt_single_point_calc_endmembers(P[i], T[i], data, X, Xoxides, sys_in, rm_list)
 
             ### MAGEMin converts to a compatible format, so get those here
@@ -211,23 +217,20 @@ class MAGEMinGarnetCalculator:
             gt_mol_frac[i] = gt_frac
             gt_wt_frac[i] = gt_wt
             gt_vol_frac[i] = gt_vol
-
-
-            garnet_fractions = {"py": py, "alm": alm, "gr": gr, "spss": spss, "kho": kho}
+                
             
-            # Calculate the molar fractions of the elements in garnet
-            mole_fractions = calculate_molar_fractions(garnet_fractions)
-
-            if sys_in == 'wt' and 'g' in out.ph:
+            if (sys_in == 'wt') & (np.array(list(emDict_wt.values())).any() > 0.):
+                mole_fractions = calculate_molar_fractions(emDict_wt, 'wt')
                 mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
                 wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
 
-                Mgi[i] = wt_percent_list[0]
-                Mni[i] = wt_percent_list[1]
-                Fei[i] = wt_percent_list[2]
-                Cai[i] = wt_percent_list[3]
+                Mgi[i] = wt_percent_list[0]/100
+                Mni[i] = wt_percent_list[1]/100
+                Fei[i] = wt_percent_list[2]/100
+                Cai[i] = wt_percent_list[3]/100
 
-            else: ### these return 0 anyway so can be used for both if garnet is not present
+            else:
+                mole_fractions = calculate_molar_fractions(emDict_mol, 'mol')
                 Mgi[i] = mole_fractions["Mg"]
                 Mni[i] = mole_fractions["Mn"]
                 Fei[i] = mole_fractions["Fe"]
