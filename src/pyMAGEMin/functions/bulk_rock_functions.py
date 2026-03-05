@@ -16,7 +16,7 @@ ref_atomic_mass = [28.085, 15.999, 26.982, 40.078, 24.305, 55.845, 39.0983, 22.9
 
 atomic_mass_dict = dict(zip(ref_elements, ref_atomic_mass))
 
-### get the mass dicts for use in
+### Get the mass dictionaries for use in conversion functions.
 def get_molar_mass_dict():
     return molar_mass_dict
 
@@ -220,13 +220,13 @@ def calculate_molar_fractions(endmember_fractions, input_type='mol'):
     if 'spss' in mol_fractions:
         molar_amounts['Mn'] += mol_fractions['spss'] * 3  # 3 Mn in Spessartine
     if 'kho' in mol_fractions:
-        molar_amounts['Mg'] += mol_fractions['kho'] * 3   # 3 Mg in Khoharite
-        molar_amounts['Fe'] += mol_fractions['kho'] * 2   # 2 Fe in Khoharite
+        molar_amounts['Mg'] += mol_fractions['kho'] * 3   # 3 Mg in Khoharite (X-site)
+        # Fe in Khoharite is Fe³⁺ in the Y-site, not X-site; excluded from X-site normalization
     
     # Extended endmembers
     if 'andr' in mol_fractions:
-        molar_amounts['Ca'] += mol_fractions['andr'] * 3  # 3 Ca in Andradite
-        molar_amounts['Fe'] += mol_fractions['andr'] * 2  # 2 Fe in Andradite
+        molar_amounts['Ca'] += mol_fractions['andr'] * 3  # 3 Ca in Andradite (X-site)
+        # Fe in Andradite is Fe³⁺ in the Y-site, not X-site; excluded from X-site normalization
     if 'knom' in mol_fractions:
         molar_amounts['Mg'] += mol_fractions['knom'] * 3  # 3 Mg in Knorringite
         # molar_amounts['Cr'] += mol_fractions['knom'] * 2  # 2 Cr in Y-site

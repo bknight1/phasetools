@@ -20,6 +20,7 @@ def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
     
     Returns:
         cumulative_volumes (np.array): Cumulative mineral volume for each class.
+        formation_times (np.array): Formation time assigned to each class.
         radii (np.array): Final radius values for each class.
         radius_matrix (2D np.array): Matrix of radius values between classes.
     """
@@ -63,19 +64,6 @@ def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
         
         # Determine the formation time for this class by finding which 
         # time index in tGn corresponds to the cumulative volume.
-        lower_inds = np.where(Gn <= cumulative_volumes[i])[0]
-        upper_inds = np.where(Gn >= cumulative_volumes[i])[0]
-        i_lower = lower_inds[-1] if lower_inds.size > 0 else upper_inds[0]
-        i_upper = upper_inds[0] if upper_inds.size > 0 else lower_inds[-1]
-        
-        # If the cumulative volume exactly matches one value, use that formation time;
-        # otherwise, interpolate between the two nearest time points.
-        # if i_lower == i_upper:
-        #     formation_times[i] = tGn[i_upper]
-        # else:
-        #     formation_times[i] = np.interp(cumulative_volumes[i],
-        #                                    [Gn[i_lower], Gn[i_upper]],
-        #                                    [tGn[i_lower], tGn[i_upper]])
 
         # Snap to the first time index where available volume meets/exceeds the need
         capped_volume = min(cumulative_volumes[i], Gn[-1])
@@ -276,8 +264,23 @@ class GarnetGenerator:
         return tG, TG, PG, MnG, MgG, FeG, CaG
 
     def _forward_fill_nonzero(self, arr):
+        """Forward-fill non-zero values along a 1D array.
+
+        Elements before the first non-zero are left unchanged.
+        From the first non-zero onward, zeros are replaced by the most recent
+        non-zero value. Raises ``ValueError`` if the array contains only zeros.
+        """
+        arr = np.asarray(arr)
         non_zero_mask = arr != 0
-        last_non_zero = np.maximum.accumulate(non_zero_mask * np.arange(len(arr)))
+        if not np.any(non_zero_mask):
+            raise ValueError("Cannot forward-fill: input array contains only zeros.")
+        indices = np.arange(arr.shape[0])
+        first_nz = np.argmax(non_zero_mask)
+        last_non_zero = np.empty_like(indices)
+        if first_nz > 0:
+            last_non_zero[:first_nz] = indices[:first_nz]
+        masked_indices = np.where(non_zero_mask, indices, 0)
+        last_non_zero[first_nz:] = np.maximum.accumulate(masked_indices[first_nz:])
         return arr[last_non_zero]
 
     def _build_size_distribution(self):
@@ -334,7 +337,7 @@ class GarnetGenerator:
 
         return data
         
-    def get_retrograde_concentrations(self,  new_t=None):
+    def get_retrograde_concentrations(self, new_t=None):
         """Get the retrograde concentrations of garnet-forming elements.
 
         Parameters:
@@ -346,33 +349,10 @@ class GarnetGenerator:
             Concentrations (array): An array with the element concentrations and PTt data at each retrograde step.
         """
 
-        # ### we use the P_arr and T_arr to get the X of the rim
-        # ### We do not fractionate
-        # gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai, X = self.garnet_generator.gt_along_path(
-        #     self.Pi, self.Ti, 
-        #     self.data, self.X, self.Xoxides,
-        #     self.sys_in, fractionate=False, rm_list=self.rm_list,
-        # )
-
-        # if new_t is not None:
-        #     # interpolate onto new time values
-        #     new_Ti = self._interp(t_arr, T_arr, new_t)
-        #     new_Pi = self._interp(t_arr, P_arr, new_t)
-        #     new_Mni = self._interp(t_arr, Mni, new_t)
-        #     new_Mgi = self._interp(t_arr, Mgi, new_t)
-        #     new_Fei = self._interp(t_arr, Fei, new_t)
-        #     new_Cai = self._interp(t_arr, Cai, new_t)
-
-        #     data = np.column_stack([new_t, new_Ti, new_Pi, new_Mni, new_Mgi, new_Fei, new_Cai]).T
-
-        # else:
-        #      data = np.column_stack([t_arr, T_arr, P_arr, Mni, Mgi, Fei, Cai]).T
-
         GVi = np.array(self.gt_vol_frac)
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
-        last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
         ind = slice(first_one_idx, None)
 
         tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
@@ -468,8 +448,10 @@ class GarnetGenerator:
 
         # Generate radius classes and distributions
         self._size_dist_override = size_dist
-        n_classes, r, dr, finp, fnr = self._build_size_distribution()
-        del self._size_dist_override
+        try:
+            n_classes, r, dr, finp, fnr = self._build_size_distribution()
+        finally:
+            del self._size_dist_override
 
         Gn = GVG / np.max(GVG)
         tGn = tG
@@ -547,7 +529,7 @@ class GarnetGenerator:
 
         first_one_idx = self._first_one_index(GVn)
         last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
-        ind = np.arange(last_zero_idx, first_one_idx+1)
+        ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         GVG = GVn[ind]
 
