@@ -286,6 +286,13 @@ class MAGEMinGarnetCalculator:
         -------
         tuple of np.ndarray
             ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, Mg, Mn, Fe, Ca, X_along_path)``.
+
+        Notes
+        -----
+        When ``fractionate=True``, bulk-rock updates are applied only for *new net*
+        garnet growth, i.e. when ``gt_frac`` exceeds its historical maximum along
+        the path. This avoids no-op/oscillatory fractionation updates from local
+        fluctuations and keeps ``X_along_path`` stable after peak growth.
         """
         oxide_names = list(Xoxides)
         Xoxides_jl = jlconvert(jl.Vector[jl.String], Xoxides)
@@ -302,7 +309,7 @@ class MAGEMinGarnetCalculator:
 
         X_along_path = np.zeros(shape=(n_points, len(X)) )
 
-        gt_frac_previous = 0.
+        gt_frac_max_previous = 0.
         phase_functions = PhaseFunctions() if fractionate else None
         for i, (P_step, T_step) in enumerate(zip(P, T)):
             X_jl = jlconvert(jl.Vector[jl.Float64], X)
@@ -315,10 +322,11 @@ class MAGEMinGarnetCalculator:
             gt_vol_frac[i] = gt_vol
 
             if phase_functions is not None and i > 0:
-                frac_amount = max(gt_frac - gt_frac_previous, 0.0)
-                X = phase_functions.fractionate_phase('g', out, sys_in, frac_amount=frac_amount)
+                frac_amount = max(gt_frac - gt_frac_max_previous, 0.0)
+                if frac_amount > 0:
+                    X = phase_functions.fractionate_phase('g', out, sys_in, frac_amount=frac_amount)
 
-            gt_frac_previous = gt_frac
+            gt_frac_max_previous = max(gt_frac_max_previous, gt_frac)
             
             X_along_path[i] = X
             Mgi[i] = Mg

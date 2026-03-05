@@ -79,7 +79,8 @@ def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
 
 
 class GarnetGenerator:
-    """Generate synthetic garnet populations with compositional zoning along P-T-t paths.
+    """
+    Generate synthetic garnet populations with compositional zoning along P-T-t paths.
     
     This class models garnet crystallisation and growth during metamorphic evolution,
     producing populations of garnets with realistic core-to-rim compositional zonation
@@ -89,6 +90,7 @@ class GarnetGenerator:
     as discrete cohorts that nucleate and grow at different times along the P-T-t path.
     Each garnet's internal zoning is determined by the conditions (P, T, composition)
     that existed when that garnet reached each radial position.
+
     """
     
     def __init__(self, Pi, Ti, ti, data, X, Xoxides, sys_in, rm_list=None,
@@ -154,7 +156,7 @@ class GarnetGenerator:
         self.extract_garnet_data()
 
     def get_last_growth_bulk_composition(self):
-        """Return bulk-rock composition at the last garnet growth stage."""
+        """Return bulk composition at ``last_growth_index`` (not path end)."""
         return self.X_last_growth
 
     def get_growth_indices(self):
