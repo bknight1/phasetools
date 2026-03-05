@@ -6,8 +6,8 @@ import numpy as np
 
 ''' Molecular weights of oxides and elements '''
 
-ref_ox = ["SiO2", "Al2O3", "CaO", "MgO", "FeO", "Fe2O3", "K2O", "Na2O", "TiO2", "O", "Cr2O3", "MnO", "H2O", "S", "O2"]
-ref_molar_mass = [60.08, 101.96, 56.08, 40.30, 71.85, 159.69, 94.2, 61.98, 79.88, 16.0, 151.99, 70.937, 18.015, 32.06, 31.998]
+ref_ox = ["SiO2", "Al2O3", "CaO", "MgO", "FeO", "Fe2O3", "K2O", "Na2O", "TiO2", "O", "Cr2O3", "MnO", "H2O", "S", "O2", "P2O5"]
+ref_molar_mass = [60.08, 101.96, 56.08, 40.30, 71.85, 159.69, 94.2, 61.98, 79.88, 16.0, 151.99, 70.937, 18.015, 32.06, 31.998, 141.9445]
 
 molar_mass_dict = dict(zip(ref_ox, ref_molar_mass))
 
@@ -15,6 +15,13 @@ ref_elements = ["Si", "O", "Al", "Ca", "Mg", "Fe", "K", "Na", "Ti", "Cr", "Mn", 
 ref_atomic_mass = [28.085, 15.999, 26.982, 40.078, 24.305, 55.845, 39.0983, 22.98977, 47.867, 51.9961, 54.938, 1.00794, 32.065]
 
 atomic_mass_dict = dict(zip(ref_elements, ref_atomic_mass))
+
+### get the mass dicts for use in
+def get_molar_mass_dict():
+    return molar_mass_dict
+
+def get_atomic_mass_dict():
+    return atomic_mass_dict
 
 
 def convert_mol_percent_to_wt_percent(mol_percents, components, mass_dict):
@@ -213,13 +220,13 @@ def calculate_molar_fractions(endmember_fractions, input_type='mol'):
     if 'spss' in mol_fractions:
         molar_amounts['Mn'] += mol_fractions['spss'] * 3  # 3 Mn in Spessartine
     if 'kho' in mol_fractions:
-        molar_amounts['Mg'] += mol_fractions['kho'] * 3   # 3 Mg in Khoharite 
-        # molar_amounts['Fe'] += mol_fractions['kho'] * 2   #  Effects of Fe3 are on the Y mixing site, which can be ignored (???)
+        molar_amounts['Mg'] += mol_fractions['kho'] * 3   # 3 Mg in Khoharite
+        molar_amounts['Fe'] += mol_fractions['kho'] * 2   # 2 Fe in Khoharite
     
     # Extended endmembers
     if 'andr' in mol_fractions:
         molar_amounts['Ca'] += mol_fractions['andr'] * 3  # 3 Ca in Andradite
-        # molar_amounts['Fe'] += mol_fractions['andr'] * 2  # 2 Fe3+ in Y-site (can be ignored for X-site calculations)
+        molar_amounts['Fe'] += mol_fractions['andr'] * 2  # 2 Fe in Andradite
     if 'knom' in mol_fractions:
         molar_amounts['Mg'] += mol_fractions['knom'] * 3  # 3 Mg in Knorringite
         # molar_amounts['Cr'] += mol_fractions['knom'] * 2  # 2 Cr in Y-site
@@ -227,9 +234,8 @@ def calculate_molar_fractions(endmember_fractions, input_type='mol'):
         molar_amounts['Mg'] += mol_fractions['tig'] * 3.5  # 3.5 Mg in Titanium garnet (3 in M1, 0.5 in M2)
         # molar_amounts['Ti'] += mol_fractions['tig'] * 0.5  # 0.5 Ti in M2-site
 
-    # Calculate total moles of these elements (focusing on X-site elements for garnet zoning)
-    # Note: Only counting X-site elements (Mg, Ca, Fe, Mn) for traditional garnet zoning calculations
-    # Cr and Ti are typically in Y-site and less relevant for X-site diffusion modeling
+    # Calculate total moles of these elements for diffusion/speciation summaries
+    # Cr and Ti are omitted from normalization here.
     x_site_elements = ['Mg', 'Ca', 'Fe', 'Mn']
     total_moles = sum(molar_amounts[element] for element in x_site_elements)
 

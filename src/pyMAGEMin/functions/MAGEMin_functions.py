@@ -29,17 +29,6 @@ def phase_frac(phase, MAGEMinOutput, sys_in):
             data = MAGEMinOutput.ph_frac_wt[phase_ind]
         elif sys_in.casefold() == 'vol':
             data = MAGEMinOutput.ph_frac_vol[phase_ind]
-            # ph_names = MAGEMinOutput.ph
-            # n_ph = len(ph_names)
-            # V = np.zeros((n_ph, 1))
-            # for i, ph in enumerate(ph_names):
-            #     ids = [j for j, p in enumerate(MAGEMinOutput.ph) if p == ph]
-            #     if ids:
-            #         rho = sum(MAGEMinOutput.SS_vec[j].rho if j < MAGEMinOutput.n_SS 
-            #                 else MAGEMinOutput.PP_vec[j - MAGEMinOutput.n_SS].rho for j in ids) / len(ids)
-            #         V[i, 0] = sum(MAGEMinOutput.ph_frac_wt[j] for j in ids) / rho
-            # V /= np.sum(V)
-            # data = V[phase_ind]
         else:
             data = MAGEMinOutput.ph_frac[phase_ind]
     except:
@@ -47,13 +36,104 @@ def phase_frac(phase, MAGEMinOutput, sys_in):
     return data
 
 class MAGEMinGarnetCalculator:
+    """High-level wrappers for garnet-focused MAGEMin calculations.
+
+    This class provides convenience methods for:
+    - single-point garnet chemistry,
+    - 2D P-T grids,
+    - and full path calculations with optional fractionation.
+
+    Notes
+    -----
+    Most diffusion/inversion workflows should use the *element* methods
+    (Fe, Mg, Mn, Ca). Endmember methods are still available for petrological
+    diagnostics and phase-composition inspection.
+    """
     def __init__(self):
         pass
 
-    def generate_2D_grid_gt_endmembers(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
+    def _extract_garnet_elements_from_oxides(self, out, oxide_names, sys_in):
+        """Extract garnet Fe-Mg-Mn-Ca from garnet oxide chemistry in MAGEMin output.
+
+        Parameters
+        ----------
+        out : object
+            MAGEMin output object for a single P-T point.
+        oxide_names : list[str]
+            Oxide name order corresponding to `Comp` / `Comp_wt` arrays.
+        sys_in : str
+            Output basis. If ``'wt'``, returns element wt fractions. Otherwise,
+            returns cation mol fractions.
+
+        Returns
+        -------
+        tuple[float, float, float, float]
+            ``(Mg, Mn, Fe, Ca)`` in the requested basis.
         """
-        Generates a 2D grid of garnet endmember mole fractions by calling MAGEMin.
-        Returns arrays for garnet mole, weight, volume fractions and endmember fractions.
+        if 'g' not in out.ph:
+            return 0.0, 0.0, 0.0, 0.0
+
+        ph_index = out.ph.index('g')
+
+        if sys_in == 'wt':
+            oxide_values = np.array(out.SS_vec[ph_index].Comp_wt, dtype=float)
+            oxide_moles = {
+                ox: (oxide_values[i] / molar_mass_dict[ox]) if ox in molar_mass_dict else 0.0
+                for i, ox in enumerate(oxide_names)
+            }
+        else:
+            oxide_values = np.array(out.SS_vec[ph_index].Comp, dtype=float)
+            oxide_moles = {ox: oxide_values[i] for i, ox in enumerate(oxide_names)}
+
+        mg_moles = oxide_moles.get("MgO", 0.0)
+        mn_moles = oxide_moles.get("MnO", 0.0)
+        ca_moles = oxide_moles.get("CaO", 0.0)
+        fe_moles = oxide_moles.get("FeO", 0.0) + 2.0 * oxide_moles.get("Fe2O3", 0.0)
+
+        total_cation_moles = mg_moles + mn_moles + fe_moles + ca_moles
+        if total_cation_moles <= 0:
+            return 0.0, 0.0, 0.0, 0.0
+
+        Mg = mg_moles / total_cation_moles
+        Mn = mn_moles / total_cation_moles
+        Fe = fe_moles / total_cation_moles
+        Ca = ca_moles / total_cation_moles
+
+        if sys_in == 'wt':
+            wt_percent_list = convert_mol_percent_to_wt_percent(
+                [Mg, Mn, Fe, Ca],
+                ["Mg", "Mn", "Fe", "Ca"],
+                atomic_mass_dict,
+            )
+            Mg, Mn, Fe, Ca = [val / 100.0 for val in wt_percent_list]
+
+        return Mg, Mn, Fe, Ca
+
+    def generate_2D_grid_gt_endmembers(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
+        """Compute garnet endmember fractions over a P-T grid.
+
+        Parameters
+        ----------
+        P, T : array-like
+            Flattened pressure/temperature arrays (same shape).
+        data : object
+            MAGEMin data object from ``Initialize_MAGEMin``.
+        X, Xoxides : array-like
+            Bulk composition and oxide names.
+        sys_in : str
+            Composition basis used for extracted endmembers (``'mol'`` or ``'wt'``).
+        rm_list : optional
+            MAGEMin phase-removal list.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, py, alm, spss, gr, kho)``.
+
+        Notes
+        -----
+        Use this method when you specifically need garnet endmember proportions.
+        For Fe-Mg-Mn-Ca workflows, prefer ``generate_2D_grid_gt_elements``.
         """
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
@@ -83,46 +163,52 @@ class MAGEMinGarnetCalculator:
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, py_arr, alm_arr, spss_arr, gr_arr, kho_arr
 
     def generate_2D_grid_gt_elements(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
+        """Compute garnet element fractions (Mg, Mn, Fe, Ca) over a P-T grid.
+
+        Element fractions are computed from *molar* endmember fractions for
+        consistency, then converted to wt fractions only if ``sys_in='wt'``.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, Mg, Mn, Fe, Ca)``.
         """
-        Generates 2D grids for garnet elements based on endmember fractions.
-        Returns garnet fractions plus element molar fractions.
-        """
-        gt_mol_frac, gt_wt_frac, gt_vol_frac, py_arr, alm_arr, spss_arr, gr_arr, kho_arr = \
-            self.generate_2D_grid_gt_endmembers(P, T, data, X, Xoxides, sys_in, rm_list)
-            
+        oxide_names = list(Xoxides)
+        Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
+        X = jlconvert(jl.Vector[jl.Float64], X)
+        out = MAGEMin_C.multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in, rm_list=rm_list)
+        sys.stdout.flush()
+
+        gt_mol_frac = np.zeros_like(P)
+        gt_wt_frac = np.zeros_like(P)
+        gt_vol_frac = np.zeros_like(P)
         Mgi = np.zeros_like(P)
         Mni = np.zeros_like(P)
         Fei = np.zeros_like(P)
         Cai = np.zeros_like(P)
-        for i in range(len(py_arr)):
+        
+        for i in range(len(T)):
+            gt_mol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='mol')
+            gt_wt_frac[i]  = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='wt')
+            gt_vol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='vol')
 
-
-            garnet_fractions = {"py": py_arr[i], "alm": alm_arr[i], "gr": gr_arr[i], "spss": spss_arr[i], "kho": kho_arr[i]}
-            
-            # Calculate the molar fractions of the elements in garnet
-            mole_fractions = calculate_molar_fractions(garnet_fractions)
-
-            if sys_in == 'wt':
-                mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
-                wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
-
-                Mgi[i] = wt_percent_list[0]/100
-                Mni[i] = wt_percent_list[1]/100
-                Fei[i] = wt_percent_list[2]/100
-                Cai[i] = wt_percent_list[3]/100
-
-            else:
-                Mgi[i] = mole_fractions["Mg"]
-                Mni[i] = mole_fractions["Mn"]
-                Fei[i] = mole_fractions["Fe"]
-                Cai[i] = mole_fractions["Ca"]
+            Mgi[i], Mni[i], Fei[i], Cai[i] = self._extract_garnet_elements_from_oxides(out[i], oxide_names, sys_in)
 
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai
 
     def gt_single_point_calc_endmembers(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
-        """
-        Calculate garnet endmember fractions for a single P-T point.
-        Returns fractions and the full MAGEMin output.
+        """Calculate single-point garnet endmember fractions.
+
+        Returns
+        -------
+        tuple
+            ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, emDict_mol, emDict_wt, out)``
+            where ``out`` is the raw MAGEMin output object.
+
+        Notes
+        -----
+        This is the low-level chemistry view. For direct Fe-Mg-Mn-Ca values,
+        use ``gt_single_point_calc_elements``.
         """
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
@@ -154,98 +240,97 @@ class MAGEMinGarnetCalculator:
         return gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out
 
     def gt_single_point_calc_elements(self, P, T, data, X, Xoxides, sys_in, rm_list=None):
+        """Calculate single-point garnet element fractions (Mg, Mn, Fe, Ca).
+
+        Returns
+        -------
+        tuple
+            ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, Mg, Mn, Fe, Ca, out)``.
+
+        Notes
+        -----
+        Element fractions are always derived from molar endmember chemistry for
+        internal consistency, then converted to wt basis only when requested.
         """
-        Calculate garnet element fractions for a single P-T point.
-        Returns garnet fractions and molar fractions of elements.
-        """
-        gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out = \
-            self.gt_single_point_calc_endmembers(P, T, data, X, Xoxides, sys_in, rm_list)
+        oxide_names = list(Xoxides)
+        Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
+        X = jlconvert(jl.Vector[jl.Float64], X)
 
+        out = MAGEMin_C.single_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in, rm_list=rm_list)
+        sys.stdout.flush()
 
-        if (sys_in == 'wt') & (np.array(list(emDict_wt.values())).any() > 0.):
-            mole_fractions = calculate_molar_fractions(emDict_wt, 'wt')
-            mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
-            wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
+        gt_frac = phase_frac(phase="g", MAGEMinOutput=out, sys_in='mol')
+        gt_wt = phase_frac(phase="g", MAGEMinOutput=out, sys_in='wt')
+        gt_vol = phase_frac(phase="g", MAGEMinOutput=out, sys_in='vol')
 
-            Mg = wt_percent_list[0]/100
-            Mn = wt_percent_list[1]/100
-            Fe = wt_percent_list[2]/100
-            Ca = wt_percent_list[3]/100
-
-        else:
-            mole_fractions = calculate_molar_fractions(emDict_mol, 'mol')
-            Mg = mole_fractions["Mg"]
-            Mn = mole_fractions["Mn"]
-            Fe = mole_fractions["Fe"]
-            Ca = mole_fractions["Ca"]
+        Mg, Mn, Fe, Ca = self._extract_garnet_elements_from_oxides(out, oxide_names, sys_in)
         
         return gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out
 
     def gt_along_path(self, P, T, data, X, Xoxides, sys_in, fractionate=False, rm_list=None):
-        """
-        Calculates garnet composition and fractionation along a P-T path.
-        Returns arrays of garnet fractions and element mole fractions along the path.
+        """Calculate garnet fractions and element chemistry along a P-T path.
+
+        Parameters
+        ----------
+        fractionate : bool, default=False
+            If ``True``, removes newly formed garnet incrementally from bulk
+            composition between steps.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, Mg, Mn, Fe, Ca, X_along_path)``.
         """
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
         n_points = len(P)
+
         gt_wt_frac = np.zeros(n_points)
         gt_mol_frac = np.zeros(n_points)
         gt_vol_frac = np.zeros(n_points)
-        d_gt_mol_frac = np.zeros(n_points)
-        d_gt_wt_frac = np.zeros(n_points)
+
         Mgi = np.zeros(n_points)
         Mni = np.zeros(n_points)
         Fei = np.zeros(n_points)
         Cai = np.zeros(n_points)
 
+        X_along_path = np.zeros(shape=(n_points, np.array(X).shape[0]) )
 
-        
-        ### loop over P-T points to get the garnet data
-        for i in range(n_points):
-            gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out = \
-                self.gt_single_point_calc_endmembers(P[i], T[i], data, X, Xoxides, sys_in, rm_list)
+        gt_frac_previous = 0.
 
-            ### MAGEMin converts to a compatible format, so get those here
-            Xoxides = out.oxides
-            if sys_in == 'wt':
-                X = out.bulk_wt
-            else:
-                X = out.bulk
-            
+        for i, (P_step, T_step) in enumerate(zip(P, T)):
+            gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out  = self.gt_single_point_calc_elements(P_step, T_step, data, X, Xoxides, sys_in, rm_list)
 
             gt_mol_frac[i] = gt_frac
             gt_wt_frac[i] = gt_wt
             gt_vol_frac[i] = gt_vol
-                
-            
-            if (sys_in == 'wt') & (np.array(list(emDict_wt.values())).any() > 0.):
-                mole_fractions = calculate_molar_fractions(emDict_wt, 'wt')
-                mole_fractions_list = [mole_fractions["Mg"], mole_fractions["Mn"], mole_fractions["Fe"], mole_fractions["Ca"]]
-                wt_percent_list = convert_mol_percent_to_wt_percent(mole_fractions_list, ["Mg", "Mn", "Fe", "Ca"], atomic_mass_dict)
-
-                Mgi[i] = wt_percent_list[0]/100
-                Mni[i] = wt_percent_list[1]/100
-                Fei[i] = wt_percent_list[2]/100
-                Cai[i] = wt_percent_list[3]/100
-
-            else:
-                mole_fractions = calculate_molar_fractions(emDict_mol, 'mol')
-                Mgi[i] = mole_fractions["Mg"]
-                Mni[i] = mole_fractions["Mn"]
-                Fei[i] = mole_fractions["Fe"]
-                Cai[i] = mole_fractions["Ca"]
 
             if fractionate:
                 from .MAGEMin_functions import PhaseFunctions
                 phase_functions = PhaseFunctions()
-                # Initialize changes in phase fractions
-                d_gt_mol_frac[i] = gt_mol_frac[i] - gt_mol_frac[i - 1] if i > 0 else gt_mol_frac[0]
-                d_gt_wt_frac[i] = gt_wt_frac[i] - gt_wt_frac[i - 1] if i > 0 else gt_wt_frac[0]
-                ### fractionate the g(arnet) phase
-                X = phase_functions.fractionate_phase("g", d_gt_mol_frac[i], d_gt_wt_frac[i], out, X, sys_in)
 
-        return gt_mol_frac, gt_wt_frac, gt_vol_frac, d_gt_mol_frac, d_gt_wt_frac, Mgi, Mni, Fei, Cai
+
+                if gt_frac_previous == 0.:
+                    frac_amount = 1e-100
+                else:
+                    frac_amount = max(gt_frac - gt_frac_previous, 0.0)
+    
+
+                X = phase_functions.fractionate_phase('g', out, sys_in, frac_amount=frac_amount)
+
+                if frac_amount > 0:
+                    gt_frac_previous = gt_frac
+            
+            X_along_path[i] = X
+            Mgi[i] = Mg
+            Mni[i] = Mn
+            Fei[i] = Fe
+            Cai[i] = Ca
+
+            
+
+
+        return gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai, X_along_path
 
 
 class PhaseFunctions:
@@ -313,31 +398,92 @@ class PhaseFunctions:
         if not result.converged:
             raise RuntimeError("Liquidus search did not converge. Adjust bracket or check function.")
         return result.root
+    
+    def fractionate_phase(self, phase, out, sys_in, frac_amount=None):
+        ### Batch fractionation of phase from the bulk rock
 
-    def fractionate_phase(self, phase, d_mol_frac, d_wt_frac, out, X, sys_in):
-        """
-        Handles the fractionation logic for any phase.
-
-        Parameters:
-            i (int): Current index in the P-T path.
-            phase (str): Phase name (e.g., "g" for garnet).
-            mol_frac (array): Molar fractions of the phase along the path.
-            wt_frac (array): Weight fractions of the phase along the path.
-            out (object): MAGEMin output object for the current step.
-            X (array): Bulk composition array.
-            sys_in (str): Input system type ('wt' or 'mol').
-
-        Returns:
-            tuple: Updated bulk composition (X), change in molar fraction (d_mol_frac),
-                and change in weight fraction (d_wt_frac).
-        """
-
-        # Only adjust bulk composition if the phase fraction is positive
+        if sys_in == "wt":
+            current_X = out.bulk_wt
+        else:
+            current_X = out.bulk
+        
         if phase in out.ph:
             phase_ind = out.ph.index(phase)
-            if sys_in == "wt" and d_wt_frac > 0:
-                X = out.bulk_wt - (np.array(out.bulk_wt) * np.array(out.SS_vec[phase_ind].Comp_wt) * d_wt_frac)
-            elif sys_in == "mol" and d_mol_frac > 0:
-                X = out.bulk - (np.array(out.bulk) * np.array(out.SS_vec[phase_ind].Comp) * d_mol_frac)
+        
+            if sys_in == "wt":
+                ph_comp = np.array(out.SS_vec[phase_ind].Comp_wt)
+                ph_frac = out.ph_frac_wt[phase_ind]
+            else:
+                ph_comp = np.array(out.SS_vec[phase_ind].Comp)
+                ph_frac = out.ph_frac[phase_ind]
 
-        return X
+            if frac_amount == None:
+                frac_amount = ph_frac
+            
+            numerator = current_X - (frac_amount * ph_comp)
+            denominator = 1.0 - frac_amount
+            
+            # Update the effective bulk composition for the next step
+            current_X = numerator / denominator
+            
+            current_X = current_X / np.sum(current_X)
+
+        return current_X
+
+    # def fractionate_phase(self, phase, out, sys_in):
+    #     ### Batch fractionation of garnet from the bulk rock
+
+                
+    #     if sys_in == "wt":
+    #         current_X = out.bulk_wt
+    #     else:
+    #         current_X = out.bulk
+        
+    #     if phase in out.ph:
+    #         phase_ind = out.ph.index(phase)
+        
+    #         if sys_in == "wt":
+    #             ph_comp = np.array(out.SS_vec[phase_ind].Comp_wt)
+    #             ph_frac = out.ph_frac_wt[phase_ind]
+    #         else:
+    #             ph_comp = np.array(out.SS_vec[phase_ind].Comp)
+    #             ph_frac = out.ph_frac[phase_ind]
+            
+    #         numerator = current_X - (ph_frac * ph_comp)
+    #         denominator = 1.0 - ph_frac
+            
+    #         # Update the effective bulk composition for the next step
+    #         current_X = numerator / denominator
+            
+    #         current_X = current_X / np.sum(current_X)
+
+    #     return current_X
+    
+    # def fractionate_phase_old(self, phase, out, X, sys_in):
+    #     """
+    #     Handles the fractionation logic for any phase.
+
+    #     Parameters:
+    #         i (int): Current index in the P-T path.
+    #         phase (str): Phase name (e.g., "g" for garnet).
+    #         mol_frac (array): Molar fractions of the phase along the path.
+    #         wt_frac (array): Weight fractions of the phase along the path.
+    #         out (object): MAGEMin output object for the current step.
+    #         X (array): Bulk composition array.
+    #         sys_in (str): Input system type ('wt' or 'mol').
+
+    #     Returns:
+    #         tuple: Updated bulk composition (X), change in molar fraction (d_mol_frac),
+    #             and change in weight fraction (d_wt_frac).
+    #     """
+
+    #     # Only adjust bulk composition if the phase fraction is positive
+    #     if phase in out.ph:
+    #         phase_ind = out.ph.index(phase)
+    #         if sys_in == "wt" and d_wt_frac > 0:
+    #             X = out.bulk_wt - (np.array(out.bulk_wt) * np.array(out.SS_vec[phase_ind].Comp_wt) * d_wt_frac)
+    #         elif sys_in == "mol" and d_mol_frac > 0:
+    #             X = out.bulk - (np.array(out.bulk) * np.array(out.SS_vec[phase_ind].Comp) * d_mol_frac)
+
+    #     return X
+    
