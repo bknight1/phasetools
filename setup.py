@@ -68,6 +68,7 @@ setup(
         'numpy>=1.18.0',
         'matplotlib>=3.0.0',
         'scipy>=1.4.0',
+        'molmass>=2024.0.0',
         'juliacall>=0.9',
     ],
     license='AFL-3.0',

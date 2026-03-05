@@ -58,7 +58,7 @@ mpiexec -n 4 python tests/parallel_test.py
 - Reuse `data` returned by `Initialize_MAGEMin(...)` across calls to avoid re-initialization overhead.
 - `PhaseFunctions.find_phase_in/saturation` use bisection with brackets; provide realistic `(T_low, T_high)` for robust convergence.
 - Fractionation: `PhaseFunctions.fractionate_phase()` updates bulk composition between steps; honor `sys_in` and return value when chaining along paths.
-- When computing element fractions from endmembers, prefer `calculate_molar_fractions(...)` in [bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py) and only convert to wt% at edges using `convert_mol_percent_to_wt_percent(...)`.
+- For garnet element outputs, prefer the `gt_*_elements(...)` methods in [src/pyMAGEMin/functions/MAGEMin_functions.py](src/pyMAGEMin/functions/MAGEMin_functions.py).
 
 ## Extending the Package
 - New wrappers should follow the `MAGEMin_functions.py` pattern: convert inputs via `jlconvert`, call MAGEMin_C, then post-process into NumPy arrays and Python dicts.

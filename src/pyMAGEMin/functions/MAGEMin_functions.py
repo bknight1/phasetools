@@ -304,7 +304,6 @@ class MAGEMinGarnetCalculator:
 
         gt_frac_previous = 0.
         phase_functions = PhaseFunctions() if fractionate else None
-
         for i, (P_step, T_step) in enumerate(zip(P, T)):
             X_jl = jlconvert(jl.Vector[jl.Float64], X)
             gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out = self._gt_single_point_from_jl(
@@ -315,10 +314,11 @@ class MAGEMinGarnetCalculator:
             gt_wt_frac[i] = gt_wt
             gt_vol_frac[i] = gt_vol
 
-            if fractionate and gt_frac > 0:
+            if phase_functions is not None and i > 0:
                 frac_amount = max(gt_frac - gt_frac_previous, 0.0)
                 X = phase_functions.fractionate_phase('g', out, sys_in, frac_amount=frac_amount)
-                gt_frac_previous = gt_frac
+
+            gt_frac_previous = gt_frac
             
             X_along_path[i] = X
             Mgi[i] = Mg

@@ -263,26 +263,6 @@ class GarnetGenerator:
         CaG = np.array(self.Cai)[ind]
         return tG, TG, PG, MnG, MgG, FeG, CaG
 
-    def _forward_fill_nonzero(self, arr):
-        """Forward-fill non-zero values along a 1D array.
-
-        Elements before the first non-zero are left unchanged.
-        From the first non-zero onward, zeros are replaced by the most recent
-        non-zero value. Raises ``ValueError`` if the array contains only zeros.
-        """
-        arr = np.asarray(arr)
-        non_zero_mask = arr != 0
-        if not np.any(non_zero_mask):
-            raise ValueError("Cannot forward-fill: input array contains only zeros.")
-        indices = np.arange(arr.shape[0])
-        first_nz = np.argmax(non_zero_mask)
-        last_non_zero = np.empty_like(indices)
-        if first_nz > 0:
-            last_non_zero[:first_nz] = indices[:first_nz]
-        masked_indices = np.where(non_zero_mask, indices, 0)
-        last_non_zero[first_nz:] = np.maximum.accumulate(masked_indices[first_nz:])
-        return arr[last_non_zero]
-
     def _build_size_distribution(self):
         n_classes = self.garnet_classes
         r = np.linspace(self.r_min, self.r_max, n_classes, endpoint=True)
@@ -315,12 +295,6 @@ class GarnetGenerator:
 
         tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
 
-        # Forward-fill element arrays outside garnet-in area
-        MnG = self._forward_fill_nonzero(MnG)
-        MgG = self._forward_fill_nonzero(MgG)
-        FeG = self._forward_fill_nonzero(FeG)
-        CaG = self._forward_fill_nonzero(CaG)
-        
         if new_t is not None:
             # interpolate onto new time values
             new_TG = self._interp(tG, TG, new_t)
@@ -395,12 +369,6 @@ class GarnetGenerator:
 
             data = np.column_stack([t_eval, T_eval, P_eval, Mn_eval, Mg_eval, Fe_eval, Ca_eval]).T
             return data
-
-        # Forward-fill element arrays outside garnet-in area
-        MnG = self._forward_fill_nonzero(MnG)
-        MgG = self._forward_fill_nonzero(MgG)
-        FeG = self._forward_fill_nonzero(FeG)
-        CaG = self._forward_fill_nonzero(CaG)
 
         if new_t is not None:
             # interpolate onto new time values
