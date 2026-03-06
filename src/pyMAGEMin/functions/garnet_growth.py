@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
@@ -111,7 +110,7 @@ class GarnetGenerator:
         Xoxides : array-like
             Oxide compositions or molar fractions.
         sys_in : str
-            System name for MAGEMin (e.g., 'ig', 'mp', 'alk').
+            Composition basis used by MAGEMin (e.g., 'mol', 'wt', 'vol').
         rm_list : list, optional
             List of phases to remove from equilibrium calculations.
         r_min : float, default=10
@@ -519,7 +518,7 @@ class GarnetGenerator:
         Mnrw = self._interp(tG, MnG, t_arr)
         Mgrw = self._interp(tG, MgG, t_arr)
         Ferw = self._interp(tG, FeG, t_arr)
-        Carw = self._interp(tG, CaG, t_arr)
+        Carw = 1 - Mnrw - Mgrw - Ferw
 
         # --- Create the summary subplots ---
         fig, axs = plt.subplots(3, 2, figsize=(10, 15))
@@ -580,8 +579,8 @@ class GarnetGenerator:
         i = garnet_no  # highlight the defined garnet number
         ind_local = np.arange(i, n_classes)
         rplt = R[i, :]
+        axs[2, 1].set_title('Chosen Garnet Composition')
         for ax in [axs[2, 0], axs[2, 1]]:
-            ax.set_title('Chosen Garnet Composition')
             ax.set_xlabel('r')
             ax.set_ylabel('c')
             ax.set_xlim([0, self.r_max])

@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.interpolate import PchipInterpolator, griddata
+from scipy.interpolate import PchipInterpolator
 
 
 def create_PTt_path(P, T, t, nsteps):
@@ -43,7 +43,7 @@ def create_PTt_path(P, T, t, nsteps):
     dP = P_all[1:] - P_all[:-1]
     dT = T_all[1:] - T_all[:-1]
     # Where differences are below eps thresholds, add a small offset to uniquely separate the points.
-    mask = (dP < epsP) & (dT < epsT)
+    mask = (np.abs(dP) < epsP) & (np.abs(dT) < epsT)
     if np.any(mask):
         # Note: The adjustment below affects only points after the first occurrence.
         P_all[1:][mask] += 0.1 * epsP

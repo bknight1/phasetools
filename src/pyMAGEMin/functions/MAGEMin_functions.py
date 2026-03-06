@@ -1,9 +1,11 @@
 import numpy as np
 import sys
-import warnings
-import juliacall
 from juliacall import Main as jl, convert as jlconvert
-from .bulk_rock_functions import *
+from .bulk_rock_functions import (
+    atomic_mass_dict,
+    convert_mol_percent_to_wt_percent,
+    molar_mass_dict,
+)
 
 from scipy.optimize import root_scalar
 
@@ -75,7 +77,7 @@ class MAGEMinGarnetCalculator:
 
         ph_index = out.ph.index('g')
 
-        if sys_in == 'wt':
+        if sys_in.casefold() == 'wt':
             oxide_values = np.array(out.SS_vec[ph_index].Comp_wt, dtype=float)
             oxide_moles = {
                 ox: (oxide_values[i] / molar_mass_dict[ox]) if ox in molar_mass_dict else 0.0
@@ -99,7 +101,7 @@ class MAGEMinGarnetCalculator:
         Fe = fe_moles / total_cation_moles
         Ca = ca_moles / total_cation_moles
 
-        if sys_in == 'wt':
+        if sys_in.casefold() == 'wt':
             wt_percent_list = convert_mol_percent_to_wt_percent(
                 [Mg, Mn, Fe, Ca],
                 ["Mg", "Mn", "Fe", "Ca"],
@@ -437,7 +439,7 @@ class PhaseFunctions:
             fractionation, in the same basis specified by ``sys_in``.
         """
 
-        if sys_in == "wt":
+        if sys_in.casefold() == "wt":
             current_X = out.bulk_wt
         else:
             current_X = out.bulk
@@ -445,7 +447,7 @@ class PhaseFunctions:
         if phase in out.ph:
             phase_ind = out.ph.index(phase)
         
-            if sys_in == "wt":
+            if sys_in.casefold() == "wt":
                 ph_comp = np.array(out.SS_vec[phase_ind].Comp_wt)
                 ph_frac = out.ph_frac_wt[phase_ind]
             else:
