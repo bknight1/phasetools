@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 from scipy.stats import norm
 
 
@@ -265,11 +264,11 @@ class GarnetGenerator:
         CaG = np.array(self.Cai)[ind]
         return tG, TG, PG, MnG, MgG, FeG, CaG
 
-    def _build_size_distribution(self):
+    def _build_size_distribution(self, size_dist='N'):
         n_classes = self.garnet_classes
         r = np.linspace(self.r_min, self.r_max, n_classes, endpoint=True)
         dr = r[1] - r[0]
-        finp = self._get_size_distribution('N', r) if not hasattr(self, '_size_dist_override') else self._get_size_distribution(self._size_dist_override, r)
+        finp = self._get_size_distribution(size_dist, r)
         fnr = self._normalize_distribution(finp, r)
         return n_classes, r, dr, finp, fnr
 
@@ -292,7 +291,10 @@ class GarnetGenerator:
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
-        last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
+        try:
+            last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
+        except IndexError:
+            last_zero_idx = -1
         ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
@@ -417,11 +419,7 @@ class GarnetGenerator:
         tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
 
         # Generate radius classes and distributions
-        self._size_dist_override = size_dist
-        try:
-            n_classes, r, dr, finp, fnr = self._build_size_distribution()
-        finally:
-            del self._size_dist_override
+        n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
 
         Gn = GVG / np.max(GVG)
         tGn = tG
@@ -498,24 +496,17 @@ class GarnetGenerator:
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
-        last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
+        try:
+            last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
+        except IndexError:
+            last_zero_idx = -1
         ind = np.arange(last_zero_idx+1, first_one_idx+1)
 
         GVG = GVn[ind]
 
         tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
 
-
-        
-        n_classes = self.garnet_classes
-        r = np.linspace(self.r_min, self.r_max, n_classes, endpoint=True)
-        dr = r[1] - r[0]
-
-        finp = self._get_size_distribution(size_dist, r)
-
-        
-        # Normalize the distribution by volume
-        fnr = self._normalize_distribution(finp, r)
+        n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
 
         Gn = GVG / np.max(GVG)
         tGn = tG

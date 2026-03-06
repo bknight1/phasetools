@@ -407,7 +407,35 @@ class PhaseFunctions:
         return result.root
     
     def fractionate_phase(self, phase, out, sys_in, frac_amount=None):
-        ### Batch fractionation of phase from the bulk rock
+        """
+        Perform batch fractionation of a phase from the bulk rock composition.
+
+        The bulk composition is adjusted by removing a specified fraction of the
+        given phase composition, then renormalized. If ``frac_amount`` is not
+        provided, the full phase fraction present in ``out`` is removed.
+
+        Parameters
+        ----------
+        phase : str
+            Name of the phase to fractionate (must be present in ``out.ph``).
+        out :
+            MAGEMin output object containing bulk and phase properties
+            (e.g., ``bulk``, ``bulk_wt``, ``ph``, ``SS_vec``, ``ph_frac``, ``ph_frac_wt``).
+        sys_in : str
+            Composition basis: use ``"wt"`` for weight fraction (``bulk_wt``,
+            ``Comp_wt``, ``ph_frac_wt``), anything else uses molar basis
+            (``bulk``, ``Comp``, ``ph_frac``).
+        frac_amount : float, optional
+            Fraction of the phase to remove from the bulk. If None, the
+            phase fraction from ``out`` is used (i.e., complete removal of
+            that phase).
+
+        Returns
+        -------
+        numpy.ndarray
+            Updated, renormalized bulk composition array after phase
+            fractionation, in the same basis specified by ``sys_in``.
+        """
 
         if sys_in == "wt":
             current_X = out.bulk_wt
