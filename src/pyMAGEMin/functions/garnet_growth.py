@@ -272,7 +272,47 @@ class GarnetGenerator:
         return n_classes, r, dr, finp, fnr
 
     def _interp(self, t_src, y_src, t_new):
-        return np.interp(t_new, t_src, y_src)
+        """Linearly interpolate (and extrapolate) y_src at t_new.
+
+        In-range values use ``np.interp``; values outside the range of
+        ``t_src`` are linearly extrapolated using the slope of the two
+        nearest boundary points. Falls back to the boundary value when
+        consecutive boundary points have identical time coordinates.
+
+        Parameters
+        ----------
+        t_src : array-like
+            Source time values (must be monotonically increasing).
+        y_src : array-like
+            Source data values corresponding to ``t_src``.
+        t_new : scalar or array-like
+            Target time value(s) at which to interpolate/extrapolate.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            Interpolated/extrapolated values. Returns a scalar when
+            ``t_new`` is a scalar, otherwise an array.
+        """
+        t_src = np.asarray(t_src, dtype=float)
+        y_src = np.asarray(y_src, dtype=float)
+        scalar = np.ndim(t_new) == 0
+        t_new = np.atleast_1d(np.asarray(t_new, dtype=float))
+        result = np.interp(t_new, t_src, y_src)
+        if len(t_src) >= 2:
+            below = t_new < t_src[0]
+            if np.any(below):
+                dt = t_src[1] - t_src[0]
+                if dt != 0.0:
+                    slope = (y_src[1] - y_src[0]) / dt
+                    result[below] = y_src[0] + slope * (t_new[below] - t_src[0])
+            above = t_new > t_src[-1]
+            if np.any(above):
+                dt = t_src[-1] - t_src[-2]
+                if dt != 0.0:
+                    slope = (y_src[-1] - y_src[-2]) / dt
+                    result[above] = y_src[-1] + slope * (t_new[above] - t_src[-1])
+        return result[0] if scalar else result
 
     def get_prograde_concentrations(self, new_t=None):
         """Get the prograde concentrations of garnet-forming elements.
@@ -287,6 +327,8 @@ class GarnetGenerator:
         """
 
         GVi = np.array(self.gt_vol_frac)
+        if GVi.size == 0 or np.max(GVi) <= 0:
+            raise ValueError("No garnet growth detected in gt_vol_frac.")
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
@@ -327,6 +369,8 @@ class GarnetGenerator:
         """
 
         GVi = np.array(self.gt_vol_frac)
+        if GVi.size == 0 or np.max(GVi) <= 0:
+            raise ValueError("No garnet growth detected in gt_vol_frac.")
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
@@ -402,6 +446,8 @@ class GarnetGenerator:
         """
 
         GVi = np.array(self.gt_vol_frac)
+        if GVi.size == 0 or np.max(GVi) <= 0:
+            raise ValueError("No garnet growth detected in gt_vol_frac.")
         GVn = self._compute_normalized_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
