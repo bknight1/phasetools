@@ -454,7 +454,15 @@ class PhaseFunctions:
 
             if frac_amount is None:
                 frac_amount = ph_frac
-            
+
+            if frac_amount >= 1.0:
+                warnings.warn(
+                    f"fractionate_phase: requested frac_amount={frac_amount} for "
+                    f"phase '{phase}' is >= 1.0; skipping fractionation step to "
+                    "avoid division by zero."
+                )
+                return np.array(current_X, dtype=float)
+
             numerator = current_X - (frac_amount * ph_comp)
             denominator = 1.0 - frac_amount
             

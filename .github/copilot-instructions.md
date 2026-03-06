@@ -6,7 +6,7 @@ This repo provides Python wrappers around the Julia MAGEMin_C thermodynamic mini
 - Core package: pyMAGEMin (Python, src layout). See [src/pyMAGEMin/__init__.py](src/pyMAGEMin/__init__.py) for `juliacall` initialization of the Julia module `MAGEMin_C` made globally available as `pyMAGEMin.MAGEMin_C`.
 - MAGEMin wrappers and helpers:
   - [src/pyMAGEMin/functions/MAGEMin_functions.py](src/pyMAGEMin/functions/MAGEMin_functions.py): `MAGEMinGarnetCalculator` (grid, single-point, and path calculations, optional fractionation) and `PhaseFunctions` (solidus/liquidus search via `scipy.optimize.root_scalar`, batch fractionation).
-  - [src/pyMAGEMin/functions/bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py): composition utilities (mol↔wt conversions, garnet endmember mapping and related helpers).
+  - [src/pyMAGEMin/functions/bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py): composition utilities (mol↔wt conversions and related helpers).
   - [src/pyMAGEMin/functions/garnet_growth.py](src/pyMAGEMin/functions/garnet_growth.py): builds size distributions and radial profiles from P–T–t paths using results from `MAGEMinGarnetCalculator`.
   - [src/pyMAGEMin/functions/utils.py](src/pyMAGEMin/functions/utils.py): `create_PTt_path()` P–T–t interpolation with embedded original points.
 
@@ -20,7 +20,7 @@ This repo provides Python wrappers around the Julia MAGEMin_C thermodynamic mini
 - Higher-level APIs in `MAGEMinGarnetCalculator` wrap the above and compute endmember and element fractions for phase `"g"` (garnet). Helpers `phase_frac()` and `extract_end_member()` encapsulate MAGEMin_C output access patterns.
 - Units and conventions:
   - `sys_in`: `'mol'`, `'wt'`, or `'vol'` where applicable; keep consistent across pipelines.
-  - Garnet endmembers: `py`, `alm`, `spss`, `gr`, `kho` with element mapping defined in [bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py).
+  - Garnet endmembers: `py`, `alm`, `spss`, `gr`, `kho`; element mapping is handled internally via `_extract_garnet_elements_from_oxides` and related helpers.
   - Phase keys: garnet is `'g'`; many helpers assume this.
 
 ## Minimal Usage Example
