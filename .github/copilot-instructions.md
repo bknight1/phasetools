@@ -6,7 +6,7 @@ This repo provides Python wrappers around the Julia MAGEMin_C thermodynamic mini
 - Core package: pyMAGEMin (Python, src layout). See [src/pyMAGEMin/__init__.py](src/pyMAGEMin/__init__.py) for `juliacall` initialization of the Julia module `MAGEMin_C` made globally available as `pyMAGEMin.MAGEMin_C`.
 - MAGEMin wrappers and helpers:
   - [src/pyMAGEMin/functions/MAGEMin_functions.py](src/pyMAGEMin/functions/MAGEMin_functions.py): `MAGEMinGarnetCalculator` (grid, single-point, and path calculations, optional fractionation) and `PhaseFunctions` (solidus/liquidus search via `scipy.optimize.root_scalar`, batch fractionation).
-  - [src/pyMAGEMin/functions/bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py): composition utilities (mol↔wt conversions, FeOt splitting, garnet endmember → element fractions).
+  - [src/pyMAGEMin/functions/bulk_rock_functions.py](src/pyMAGEMin/functions/bulk_rock_functions.py): composition utilities (mol↔wt conversions, garnet endmember mapping and related helpers).
   - [src/pyMAGEMin/functions/garnet_growth.py](src/pyMAGEMin/functions/garnet_growth.py): builds size distributions and radial profiles from P–T–t paths using results from `MAGEMinGarnetCalculator`.
   - [src/pyMAGEMin/functions/utils.py](src/pyMAGEMin/functions/utils.py): `create_PTt_path()` P–T–t interpolation with embedded original points.
 
@@ -47,9 +47,9 @@ python -m pip install -e .
 julia --version
 julia -e 'using Pkg; Pkg.status("MAGEMin_C")'
 ```
-- Parallel example (MPI): see [tests/parallel_test.py](tests/parallel_test.py). Run with e.g.:
+- Parallel example (MPI): run your own driver script under MPI, e.g.:
 ```bash
-mpiexec -n 4 python tests/parallel_test.py
+mpiexec -n 4 python your_script.py
 ```
 - Tutorials and examples: notebooks under [Tutorials/](Tutorials) demonstrate workflows end-to-end.
 
