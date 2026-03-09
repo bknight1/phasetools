@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 from scipy.stats import norm
+from typing import Any
 
 
 
@@ -134,7 +136,7 @@ class GarnetGenerator:
         self.ti = ti
         self.data = data
         self.X = X
-        self.Xoxides = Xoxides
+        self.Xoxides = list(Xoxides)
         self.sys_in = sys_in
         self.r_min = r_min
         self.r_max = r_max
@@ -274,11 +276,6 @@ class GarnetGenerator:
     def _interp(self, t_src, y_src, t_new):
         """Linearly interpolate (and extrapolate) y_src at t_new.
 
-        In-range values use ``np.interp``; values outside the range of
-        ``t_src`` are linearly extrapolated using the slope of the two
-        nearest boundary points. Falls back to the boundary value when
-        consecutive boundary points have identical time coordinates.
-
         Parameters
         ----------
         t_src : array-like
@@ -298,20 +295,15 @@ class GarnetGenerator:
         y_src = np.asarray(y_src, dtype=float)
         scalar = np.ndim(t_new) == 0
         t_new = np.atleast_1d(np.asarray(t_new, dtype=float))
-        result = np.interp(t_new, t_src, y_src)
-        if len(t_src) >= 2:
-            below = t_new < t_src[0]
-            if np.any(below):
-                dt = t_src[1] - t_src[0]
-                if dt != 0.0:
-                    slope = (y_src[1] - y_src[0]) / dt
-                    result[below] = y_src[0] + slope * (t_new[below] - t_src[0])
-            above = t_new > t_src[-1]
-            if np.any(above):
-                dt = t_src[-1] - t_src[-2]
-                if dt != 0.0:
-                    slope = (y_src[-1] - y_src[-2]) / dt
-                    result[above] = y_src[-1] + slope * (t_new[above] - t_src[-1])
+        extrapolate_fill: Any = "extrapolate"
+        interpolator = interp1d(
+            t_src,
+            y_src,
+            kind="linear",
+            bounds_error=False,
+            fill_value=extrapolate_fill,
+        )
+        result = np.asarray(interpolator(t_new), dtype=float)
         return result[0] if scalar else result
 
     def get_prograde_concentrations(self, new_t=None):

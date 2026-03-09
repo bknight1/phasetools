@@ -1,10 +1,10 @@
 import numpy as np
 import sys
+import warnings
 from juliacall import Main as jl, convert as jlconvert
 from .bulk_rock_functions import (
     atomic_mass_dict,
     convert_mol_percent_to_wt_percent,
-    molar_mass_dict,
 )
 
 from scipy.optimize import root_scalar
@@ -54,15 +54,13 @@ class MAGEMinGarnetCalculator:
     def __init__(self):
         pass
 
-    def _extract_garnet_elements_from_oxides(self, out, oxide_names, sys_in):
-        """Extract garnet Fe-Mg-Mn-Ca from garnet oxide chemistry in MAGEMin output.
+    def _extract_garnet_elements_from_oxides(self, out, sys_in):
+        """Extract garnet Mg-Mn-Fe-Ca cation fractions from MAGEMin garnet output.
 
         Parameters
         ----------
         out : object
             MAGEMin output object for a single P-T point.
-        oxide_names : list[str]
-            Oxide name order corresponding to `Comp` / `Comp_wt` arrays.
         sys_in : str
             Output basis. If ``'wt'``, returns element wt fractions. Otherwise,
             returns cation mol fractions.
@@ -71,26 +69,28 @@ class MAGEMinGarnetCalculator:
         -------
         tuple[float, float, float, float]
             ``(Mg, Mn, Fe, Ca)`` in the requested basis.
+
         """
+
+
         if 'g' not in out.ph:
             return 0.0, 0.0, 0.0, 0.0
 
         ph_index = out.ph.index('g')
+        phase_obj = out.SS_vec[ph_index]
 
-        if sys_in.casefold() == 'wt':
-            oxide_values = np.array(out.SS_vec[ph_index].Comp_wt, dtype=float)
-            oxide_moles = {
-                ox: (oxide_values[i] / molar_mass_dict[ox]) if ox in molar_mass_dict else 0.0
-                for i, ox in enumerate(oxide_names)
-            }
-        else:
-            oxide_values = np.array(out.SS_vec[ph_index].Comp, dtype=float)
-            oxide_moles = {ox: oxide_values[i] for i, ox in enumerate(oxide_names)}
+        mg_moles = mn_moles = ca_moles = fe_moles = 0.0
 
-        mg_moles = oxide_moles.get("MgO", 0.0)
-        mn_moles = oxide_moles.get("MnO", 0.0)
-        ca_moles = oxide_moles.get("CaO", 0.0)
-        fe_moles = oxide_moles.get("FeO", 0.0) + 2.0 * oxide_moles.get("Fe2O3", 0.0)
+
+        if mg_moles + mn_moles + fe_moles + ca_moles <= 0.0 and hasattr(phase_obj, "Comp_apfu"):
+            oxide_values = np.array(phase_obj.Comp_apfu, dtype=float)
+            oxide_names = out.oxides
+            oxide_moles = {ox: value for ox, value in zip(oxide_names, oxide_values)}
+
+            mg_moles = oxide_moles.get("MgO", 0.0)
+            mn_moles = oxide_moles.get("MnO", 0.0)
+            ca_moles = oxide_moles.get("CaO", 0.0)
+            fe_moles = oxide_moles.get("FeO", 0.0) + 2*oxide_moles.get("Fe2O3", 0.0)
 
         total_cation_moles = mg_moles + mn_moles + fe_moles + ca_moles
         if total_cation_moles <= 0:
@@ -177,11 +177,11 @@ class MAGEMinGarnetCalculator:
         tuple of np.ndarray
             ``(gt_mol_frac, gt_wt_frac, gt_vol_frac, Mg, Mn, Fe, Ca)``.
         """
-        oxide_names = list(Xoxides)
         Xoxides = jlconvert(jl.Vector[jl.String], Xoxides)
         X = jlconvert(jl.Vector[jl.Float64], X)
         out = MAGEMin_C.multi_point_minimization(P, T, data, X=X, Xoxides=Xoxides, sys_in=sys_in, rm_list=rm_list)
         sys.stdout.flush()
+
 
         gt_mol_frac = np.zeros_like(P)
         gt_wt_frac = np.zeros_like(P)
@@ -196,7 +196,8 @@ class MAGEMinGarnetCalculator:
             gt_wt_frac[i]  = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='wt')
             gt_vol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='vol')
 
-            Mgi[i], Mni[i], Fei[i], Cai[i] = self._extract_garnet_elements_from_oxides(out[i], oxide_names, sys_in)
+
+            Mgi[i], Mni[i], Fei[i], Cai[i] = self._extract_garnet_elements_from_oxides(out[i], sys_in)
 
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai
 
@@ -257,21 +258,22 @@ class MAGEMinGarnetCalculator:
         minimized assemblage (via :meth:`_extract_garnet_elements_from_oxides`),
         using the specified ``sys_in`` basis.
         """
-        oxide_names = list(Xoxides)
         Xoxides_jl = jlconvert(jl.Vector[jl.String], Xoxides)
         X_jl = jlconvert(jl.Vector[jl.Float64], X)
-        return self._gt_single_point_from_jl(P, T, data, X_jl, Xoxides_jl, oxide_names, sys_in, rm_list)
+        return self._gt_single_point_from_jl(P, T, data, X_jl, Xoxides_jl, sys_in, rm_list)
 
-    def _gt_single_point_from_jl(self, P, T, data, X_jl, Xoxides_jl, oxide_names, sys_in, rm_list=None):
+    def _gt_single_point_from_jl(self, P, T, data, X_jl, Xoxides_jl, sys_in, rm_list=None):
         """Internal helper: single-point garnet elements from pre-converted Julia vectors."""
+        
         out = MAGEMin_C.single_point_minimization(P, T, data, X=X_jl, Xoxides=Xoxides_jl, sys_in=sys_in, rm_list=rm_list)
-        sys.stdout.flush()
+        
+        sys.stdout.flush() 
 
         gt_frac = phase_frac(phase="g", MAGEMinOutput=out, sys_in='mol')
         gt_wt = phase_frac(phase="g", MAGEMinOutput=out, sys_in='wt')
         gt_vol = phase_frac(phase="g", MAGEMinOutput=out, sys_in='vol')
-
-        Mg, Mn, Fe, Ca = self._extract_garnet_elements_from_oxides(out, oxide_names, sys_in)
+        
+        Mg, Mn, Fe, Ca = self._extract_garnet_elements_from_oxides(out, sys_in)
 
         return gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out
 
@@ -296,8 +298,9 @@ class MAGEMinGarnetCalculator:
         the path. This avoids no-op/oscillatory fractionation updates from local
         fluctuations and keeps ``X_along_path`` stable after peak growth.
         """
-        oxide_names = list(Xoxides)
-        Xoxides_jl = jlconvert(jl.Vector[jl.String], Xoxides)
+        X = np.array(X, dtype=float)
+        Xoxides = list(Xoxides)
+        
         n_points = len(P)
 
         gt_wt_frac = np.zeros(n_points)
@@ -314,19 +317,25 @@ class MAGEMinGarnetCalculator:
         gt_frac_max_previous = 0.
         phase_functions = PhaseFunctions() if fractionate else None
         for i, (P_step, T_step) in enumerate(zip(P, T)):
+            Xoxides_jl = jlconvert(jl.Vector[jl.String], Xoxides)
             X_jl = jlconvert(jl.Vector[jl.Float64], X)
+
             gt_frac, gt_wt, gt_vol, Mg, Mn, Fe, Ca, out = self._gt_single_point_from_jl(
-                P_step, T_step, data, X_jl, Xoxides_jl, oxide_names, sys_in, rm_list
+                P_step, T_step, data, X_jl, Xoxides_jl, sys_in, rm_list
             )
 
             gt_mol_frac[i] = gt_frac
             gt_wt_frac[i] = gt_wt
             gt_vol_frac[i] = gt_vol
 
+
             if phase_functions is not None and i > 0:
                 frac_amount = max(gt_frac - gt_frac_max_previous, 0.0)
                 if frac_amount > 0:
                     X = phase_functions.fractionate_phase('g', out, sys_in, frac_amount=frac_amount)
+            
+            Xoxides = list(out.oxides)
+            X = np.array(X)
 
             gt_frac_max_previous = max(gt_frac_max_previous, gt_frac)
             
@@ -335,9 +344,6 @@ class MAGEMinGarnetCalculator:
             Mni[i] = Mn
             Fei[i] = Fe
             Cai[i] = Ca
-
-            
-
 
         return gt_mol_frac, gt_wt_frac, gt_vol_frac, Mgi, Mni, Fei, Cai, X_along_path
 
