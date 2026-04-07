@@ -7,4 +7,4 @@ import juliacall
 MAGEMin_C = juliacall.newmodule("MAGEMin_C")
 MAGEMin_C.seval("using MAGEMin_C")
 
-from .functions import bulk_rock_functions, garnet_growth, MAGEMin_functions, utils
+from .functions import bulk_rock_functions, garnet_growth, MAGEMin_functions, pt_estimation, utils
