@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='pyMAGEMin',
+    name='phasetools',
     version='0.0.1',
     author='Ben Knight',
     author_email='ben.knight@curtin.edu.au',
@@ -18,7 +18,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'pyMAGEMin-julia-setup=pyMAGEMin.julia_setup:main',
+            'phasetools-julia-setup=phasetools.julia_setup:main',
         ],
     },
     license='AFL-3.0',
