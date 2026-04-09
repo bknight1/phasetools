@@ -3,158 +3,58 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.stats import norm
 from typing import Any
-import phasetools
-from juliacall import Main as jl, convert as jlconvert
-
-
+from ..calculators.garnet import MAGEMinGarnetCalculator
 
 def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
     """
     Generates a distribution of radial sizes and associated garnet volumes and formation times.
-    
-    Parameters:
-        n_classes (int): Number of classes.
-        r_min (float): Minimum mineral/crystal radius.
-        dr (float): Increment by which radii are increased.
-        fnr (array-like): Array of normalized fractions for new volume added per class.
-        Gn (array-like): Total volume at discrete time steps.
-        tGn (array-like): Formation times corresponding to volumes in Gn.
-    
-    Returns:
-        cumulative_volumes (np.array): Cumulative mineral volume for each class.
-        formation_times (np.array): Formation time assigned to each class.
-        radii (np.array): Final radius values for each class.
-        radius_matrix (2D np.array): Matrix of radius values between classes.
     """
-    # Calculate the initial volume for a garnet of minimum radius.
     initial_volume = 4/3 * np.pi * r_min**3
-
-    # Initialize arrays for cumulative volumes, formation times, and radii.
     cumulative_volumes = np.zeros(n_classes)
     formation_times = np.zeros(n_classes)
-    # Every new class starts with r_min.
     radii = np.full(n_classes, r_min, dtype=float)
-    # Create an empty matrix for radii between classes.
     radius_matrix = np.full((n_classes, n_classes), np.nan)
     
-    # Loop over each garnet class.
     for i in range(n_classes):
         if i == 0:
-            # For the first class, scale the initial volume using the fraction.
             current_volume = initial_volume * fnr[i]
             cumulative_volumes[i] = current_volume
-            # Save the volume increment for reference.
-            vol_increment = initial_volume
         else:
-            # For subsequent classes, compute the volume increment for each existing class.
-            # This computes the change in volume when the radius increases by dr.
             volume_increments = 4/3 * np.pi * ((radii[:i] + dr)**3 - (radii[:i])**3)
-            
             current_volume = initial_volume * fnr[i] + np.sum(volume_increments * fnr[:i])
-
-            # Update cumulative volume: each class adds its computed volume.
             cumulative_volumes[i] = cumulative_volumes[i-1] + current_volume
         
-        # Update the radii for the already processed classes by adding dr,
-        # then reset the current class radius to the minimum.
         radii[:i] += dr
         radii[i] = r_min
-
-        # Build the radius matrix: for column i, store the radii for previous classes.
         radius_matrix[:i, i] = radii[:i]
         radius_matrix[i, i] = radii[i]
         
-        # Determine the formation time for this class by finding which 
-        # time index in tGn corresponds to the cumulative volume.
-
-        # Snap to the first time index where available volume meets/exceeds the need
         capped_volume = min(cumulative_volumes[i], Gn[-1])
         idx = np.searchsorted(Gn, capped_volume, side="left")
         if idx >= len(tGn):
             idx = len(tGn) - 1
         formation_times[i] = tGn[idx]
 
-
-    
     return cumulative_volumes, formation_times, radii, radius_matrix
 
-
-
-class GarnetGenerator:
+class GarnetGenerator(MAGEMinGarnetCalculator):
     """
     Generate synthetic garnet populations with compositional zoning along P-T-t paths.
-    
-    This class models garnet crystallisation and growth during metamorphic evolution,
-    producing populations of garnets with realistic core-to-rim compositional zonation
-    that reflects changing pressure, temperature, and composition conditions.
-    
-    The model uses a multi-class approach where garnets of different sizes are treated
-    as discrete cohorts that nucleate and grow at different times along the P-T-t path.
-    Each garnet's internal zoning is determined by the conditions (P, T, composition)
-    that existed when that garnet reached each radial position.
-
     """
     
     def __init__(self, db="mpe", dataset=636, verbose=False):
-        """
-        Setup garnet generator
-        
-        Parameters
-        ----------
-        db : str
-            database name that's supported by MAGEMin
-        dataset : int
-            dataset number that's supported by MAGEMin
-        verbose : bool
-            verbose output
-        """
+        super().__init__(db, dataset, verbose)
 
-        from .MAGEMin_functions import MAGEMinGarnetCalculator
-        self.garnet_generator = MAGEMinGarnetCalculator()
+    def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
+        super().setup_bulk_composition(Xoxides, X, sys_in, rm_list)
+        self.X_orig = np.array(X).copy()
+        self.Xoxides_orig = list(Xoxides).copy()
 
-        
-        self.db = db
-        self.data = phasetools.MAGEMin_C.Initialize_MAGEMin(db, dataset=dataset, verbose=verbose)
-        self.garnet_calculator = phasetools.MAGEMin_functions.MAGEMinGarnetCalculator()
-
-    def setup_bulk_composition(self, Xoxides, X, rm_list=[], sys_in='mol'):
-        """
-        Sets up the bulk composition and phase list.
-        
-        Parameters
-        ----------
-        Xoxides : array-like
-            List of system components.
-        X : array-like
-            Molar fractions of system components.
-        rm_list : list, optional
-            List of phases to remove from equilibrium calculations.
-        sys_in : str
-            Composition basis used by MAGEMin (e.g., 'mol', 'wt', 'vol').
-        """
-        X_conv, Xox_conv = phasetools.MAGEMin_C.convertBulk4MAGEMin(
-            jlconvert(jl.Vector[jl.Float64], X),
-            jlconvert(jl.Vector[jl.String], Xoxides),
-            sys_in, self.db
-        )
-
-        self.sys_in = sys_in
-        self.X = np.array(X_conv) / 100.
-        self.Xoxides = list(Xox_conv)
-
-        self.X_orig = X.copy()
-        self.Xoxides_orig = Xoxides.copy()
-        
-        rm_j = jlconvert(jl.Vector[jl.String], rm_list)
-        self.rm_list = phasetools.MAGEMin_C.remove_phases(rm_j, self.db)
-    
-    
-    
     def generate_garnet_data(self, 
                 Pi, Ti, ti,
                 r_min=10, r_max=100, 
                 garnet_classes=99, nR_diff=99, 
-                fractionate=False, normalize_start=True):
+                fractionate=False, normalise_start=True):
         """
         Generate the garnet data from MAGEMin.
         
@@ -176,7 +76,7 @@ class GarnetGenerator:
             Number of radial shells per garnet for compositional zoning.
         fractionate : bool, default=False
             If True, fractionate garnet from the bulk composition as it grows.
-        normalize_start : bool, default=True
+        normalise_start : bool, default=True
             If True, the initial garnet volume is set to 0 and only new growth is modeled.
             If False, the initial thermodynamic volume is used as the starting point.
         """
@@ -190,7 +90,7 @@ class GarnetGenerator:
         self.garnet_classes = garnet_classes
         self.nR_diff = nR_diff
         self.fractionate = fractionate
-        self.normalize_start = normalize_start
+        self.normalise_start = normalise_start
         self.X_last_growth = None
         self.first_growth_index = None
         self.last_growth_index = None
@@ -198,16 +98,11 @@ class GarnetGenerator:
 
 
         ### calculate the garnet data over path
-        (self.gt_mol_frac, self.gt_wt_frac, self.gt_vol_frac,
-         self.Mgi, self.Mni, self.Fei, self.Cai, self.X_along_path) = self.garnet_generator.gt_along_path(
-            self.Pi, 
-            self.Ti, 
-            self.data, self.X, self.Xoxides,
-            self.sys_in, fractionate=self.fractionate, rm_list=self.rm_list,
-            normalize_start=self.normalize_start
-        )
+        (self.gt_mol_frac, self.gt_wt_frac, self.gt_vol_frac, self.Mgi, self.Mni, self.Fei, self.Cai, self.X_along_path) = self.gt_along_path(
+            self.Pi, self.Ti, fractionate=self.fractionate, normalise_start=self.normalise_start)
 
-        if self.normalize_start and self.gt_vol_frac[0] > 0:
+
+        if self.normalise_start and self.gt_vol_frac[0] > 0:
             self.gt_vol_frac[...] = self.gt_vol_frac[...] - self.gt_vol_frac[0] ### sets the first value to 0
 
         GVi = np.array(self.gt_vol_frac, dtype=float)
@@ -218,7 +113,7 @@ class GarnetGenerator:
             self.last_growth_time = None
             return
 
-        GVn = self._compute_normalized_GVG(GVi)
+        GVn = self._compute_normalised_GVG(GVi)
         first_one_idx = self._first_one_index(GVn)
 
         try:
@@ -246,8 +141,8 @@ class GarnetGenerator:
         
 
     
-    def _compute_normalized_GVG(self, GVi):
-        """Compute and return normalized garnet volume sequence (GVG)"""
+    def _compute_normalised_GVG(self, GVi):
+        """Compute and return normalised garnet volume sequence (GVG)"""
         GVG = [GVi[0]]
         for i in range(1, len(GVi)):
             if GVi[i] <= max(GVG):
@@ -278,8 +173,8 @@ class GarnetGenerator:
             raise ValueError("size_dist must be a string ('N' or 'U') or a numeric array")
         return finp
 
-    def _normalize_distribution(self, finp, r):
-        """Normalize the size distribution using volume and return reversed array (fnr)."""
+    def _normalise_distribution(self, finp, r):
+        """normalise the size distribution using volume and return reversed array (fnr)."""
         v = 4/3 * np.pi * r**3
         V = np.sum(v * finp)
         fn = finp / V
@@ -312,7 +207,7 @@ class GarnetGenerator:
         r = np.linspace(self.r_min, self.r_max, n_classes, endpoint=True)
         dr = r[1] - r[0]
         finp = self._get_size_distribution(size_dist, r)
-        fnr = self._normalize_distribution(finp, r)
+        fnr = self._normalise_distribution(finp, r)
         return n_classes, r, dr, finp, fnr
 
     def _interp(self, t_src, y_src, t_new):
@@ -363,7 +258,7 @@ class GarnetGenerator:
         GVi = np.array(self.gt_vol_frac)
         if GVi.size == 0 or np.max(GVi) <= 0:
             raise ValueError("No garnet growth detected in gt_vol_frac.")
-        GVn = self._compute_normalized_GVG(GVi)
+        GVn = self._compute_normalised_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
         try:
@@ -405,7 +300,7 @@ class GarnetGenerator:
         GVi = np.array(self.gt_vol_frac)
         if GVi.size == 0 or np.max(GVi) <= 0:
             raise ValueError("No garnet growth detected in gt_vol_frac.")
-        GVn = self._compute_normalized_GVG(GVi)
+        GVn = self._compute_normalised_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
         ind = slice(first_one_idx, None)
@@ -482,7 +377,7 @@ class GarnetGenerator:
         GVi = np.array(self.gt_vol_frac)
         if GVi.size == 0 or np.max(GVi) <= 0:
             raise ValueError("No garnet growth detected in gt_vol_frac.")
-        GVn = self._compute_normalized_GVG(GVi)
+        GVn = self._compute_normalised_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
         # safe last_zero like original generate_garnets
@@ -570,7 +465,7 @@ class GarnetGenerator:
         """
 
         GVi = np.array(self.gt_vol_frac)
-        GVn = self._compute_normalized_GVG(GVi)
+        GVn = self._compute_normalised_GVG(GVi)
 
         first_one_idx = self._first_one_index(GVn)
         try:
@@ -638,7 +533,7 @@ class GarnetGenerator:
         axs[1, 1].set_xlabel('t')
         axs[1, 1].set_ylabel('GV')
         axs[1, 1].set_ylim([0, 1.01])
-        axs[1, 1].plot(tGn, Gn, 'k', drawstyle='steps-post', label='Normalized Volume')
+        axs[1, 1].plot(tGn, Gn, 'k', drawstyle='steps-post', label='normalised Volume')
         axs[1, 1].plot(t_arr, G, 'mx', label='Volume Growth')
         axs[1, 1].grid(True)
         axs[1, 1].legend()
@@ -693,7 +588,34 @@ class GarnetGenerator:
             plt.show()
         else:
             plt.close()
+        GVi = np.array(self.gt_vol_frac)
+        GVn = self._compute_normalised_GVG(GVi)
+        first_one_idx = self._first_one_index(GVn)
+        try:
+            last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
+        except IndexError:
+            last_zero_idx = -1
+        ind = np.arange(last_zero_idx+1, first_one_idx+1)
+        tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
+        n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
+        Gn = GVn[ind] / np.max(GVn[ind])
+        G, t_arr, r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tG)
+        PGrw, TGrw, Mnrw, Mgrw, Ferw = [self._interp(tG, arr, t_arr) for arr in [PG, TG, MnG, MgG, FeG]]
+        Carw = 1 - Mnrw - Mgrw - Ferw
 
-
-
-
+        fig, axs = plt.subplots(3, 2, figsize=(10, 15))
+        fig.suptitle('Garnet formation summary')
+        axs[0, 0].plot(r_r, finp, '-'); [axs[0, 0].plot([r_r[i], r_r[i]], [0, finp[i]], '-') for i in range(n_classes)]
+        axs[0, 1].plot(self.Ti, self.Pi, 'k-'); axs[0, 1].plot(TGrw, PGrw, 'r.')
+        for i in range(0, n_classes, 10): axs[1, 0].plot(t_arr[i:], R[i, i:], '.-')
+        axs[1, 1].plot(tG, Gn, 'k', drawstyle='steps-post'); axs[1, 1].plot(t_arr, G, 'mx')
+        for i in np.arange(0, n_classes, 10):
+            idx = np.arange(i, n_classes); rplt = R[i, idx]
+            axs[2, 0].plot(rplt, Mnrw[idx], '-b'); axs[2, 0].plot(rplt, Mgrw[idx], '-g')
+            axs[2, 0].plot(rplt, Ferw[idx], '-r'); axs[2, 0].plot(rplt, Carw[idx], '-', c='gold')
+        i = garnet_no; idx = np.arange(i, n_classes); rplt = R[i, idx]
+        axs[2, 1].plot(rplt, Mnrw[idx], 'b-'); axs[2, 1].plot(rplt, Mgrw[idx], 'g-')
+        axs[2, 1].plot(rplt, Ferw[idx], 'r-'); axs[2, 1].plot(rplt, Carw[idx], '-', c='gold')
+        plt.tight_layout(rect=(0, 0.03, 1, 0.95))
+        if path: plt.savefig(path)
+        plt.show() if plot_fig else plt.close()
