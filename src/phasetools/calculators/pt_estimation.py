@@ -44,28 +44,53 @@ class PhasePTEstimator(MAGEMinBase):
             return 1e6 
 
     def solve(self, target_chemistry, phase, components, comp_type, bounds, 
-              x0=None, method='differential_evolution', quick=False, **kwargs):
-        """Finds the optimal P-T using global or local optimisation."""
-        args = (target_chemistry, phase, components, comp_type)
+              x0=None, method='differential_evolution', quick=False, return_path=False, **kwargs):
+        """
+        Finds the optimal P-T using global or local optimisation.
 
+        If return_path=True, the OptimizeResult object will include a .path attribute 
+        containing the history of the best solutions found during the search.
+        """
+        args = (target_chemistry, phase, components, comp_type)
+        path = []
+
+        def callback(x, *args):
+            path.append(np.array(x).copy())
+
+        # 1. Global Solvers
         if method == 'differential_evolution':
             de_params = {'strategy': 'best1bin', 'popsize': 10, 'tol': 0.01, 'polish': True}
             if quick: de_params.update({'popsize': 5, 'tol': 0.1, 'polish': False})
+            if return_path: de_params['callback'] = callback
             de_params.update(kwargs)
-            return optimize.differential_evolution(self.calculate_misfit, bounds=bounds, args=args, **de_params)
+            res = optimize.differential_evolution(self.calculate_misfit, bounds=bounds, args=args, **de_params)
+
         elif method == 'dual_annealing':
             da_params = {'maxiter': 1000}
             if quick: da_params.update({'maxiter': 50})
+            if return_path: da_params['callback'] = lambda x, f, context: path.append(np.array(x).copy())
             da_params.update(kwargs)
-            return optimize.dual_annealing(self.calculate_misfit, bounds=bounds, args=args, **da_params)
+            res = optimize.dual_annealing(self.calculate_misfit, bounds=bounds, args=args, **da_params)
+
         elif method == 'shgo':
             shgo_params = {}
             if quick: shgo_params.update({'n': 32, 'iters': 1})
+            if return_path: shgo_params['callback'] = callback
             shgo_params.update(kwargs)
-            return optimize.shgo(self.calculate_misfit, bounds=bounds, args=args, **shgo_params)
+            res = optimize.shgo(self.calculate_misfit, bounds=bounds, args=args, **shgo_params)
+
+        # 2. Local Solvers (scipy.optimize.minimize)
         else:
             if x0 is None:
                 x0 = [np.mean(b) for b in bounds]
+
             min_params = {'method': method, 'bounds': bounds}
+            if return_path: min_params['callback'] = callback
             min_params.update(kwargs)
-            return optimize.minimize(self.calculate_misfit, x0=x0, args=args, **min_params)
+            res = optimize.minimize(self.calculate_misfit, x0=x0, args=args, **min_params)
+
+        if return_path:
+            res.path = np.array(path)
+
+        return res
+

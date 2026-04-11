@@ -182,7 +182,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
     # ---- Internal helpers to reduce repetition ----
     def _first_one_index(self, GVn):
-        return np.where(GVn == 1)[0][0] -1
+        return np.where(GVn == 1)[0][0]
 
     def _last_zero_before(self, GVn, stop_idx, strict=True):
         idxs = np.where(GVn[:stop_idx] == 0)[0]
@@ -335,7 +335,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
             for i in range(len(t_eval)):
                 (_gt_frac, _gt_wt, _gt_vol,
-                 Mg_i, Mn_i, Fe_i, Ca_i, _out) = self.garnet_generator.gt_single_point_calc_elements(
+                 Mg_i, Mn_i, Fe_i, Ca_i, _out) = self.gt_single_point_calc_elements(
                     P_eval[i], T_eval[i], self.data, x_last_growth, self.Xoxides, self.sys_in, self.rm_list
                 )
                 Mn_eval[i] = Mn_i
