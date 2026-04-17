@@ -15,6 +15,8 @@ from .calculators.garnet import MAGEMinGarnetCalculator
 from .calculators.assemblage import MAGEMinAssemblageCalculator
 from .calculators.pt_estimation import PhasePTEstimator
 from .calculators.phase_search import PhaseFunctions
+from .calculators.pt_grid import MAGEMinPTGridCalculator
+from .calculators.bulk_estimation import BulkCompositionEstimator
 
 from .models.garnet_growth import GarnetGenerator, generate_distribution
 

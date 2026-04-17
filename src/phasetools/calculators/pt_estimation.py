@@ -31,19 +31,30 @@ class PhasePTEstimator(MAGEMinBase):
         total = np.sum(vals)
         return vals / total if total > 0 else vals
 
-    def calculate_misfit(self, pt_guess, target_chemistry, phase, components, comp_type='element'):
-        """Objective function: Normalised Root Mean Square Error."""
+    def calculate_misfit(self, pt_guess, target_chemistry, phase, components, comp_type='element', uncertainty=None):
+        """Objective function: Root Mean Square Error."""
         P, T = pt_guess
         try:
             out = phasetools.MAGEMin_C.single_point_minimization(
                 P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list
             )
             predicted = self._get_phase_composition(out, phase, components, comp_type)
-            return np.sqrt(np.sum(((predicted - target_chemistry) / target_chemistry)**2))
+            
+            diff = predicted - target_chemistry
+            
+            if uncertainty is not None:
+                sigma = np.array(uncertainty)
+            else:
+                sigma = np.abs(target_chemistry)
+                
+            # Avoid division by zero: if sigma is 0, use 1.0 (absolute error)
+            sigma = np.where(sigma < 1e-12, 1.0, sigma)
+            
+            return np.sqrt(np.mean((diff / sigma)**2))
         except Exception:
             return 1e6 
 
-    def solve(self, target_chemistry, phase, components, comp_type, bounds, 
+    def solve(self, target_chemistry, phase, components, comp_type, bounds, uncertainty=None,
               x0=None, method='differential_evolution', quick=False, return_path=False, **kwargs):
         """
         Finds the optimal P-T using global or local optimisation.
@@ -51,7 +62,7 @@ class PhasePTEstimator(MAGEMinBase):
         If return_path=True, the OptimizeResult object will include a .path attribute 
         containing the history of the best solutions found during the search.
         """
-        args = (target_chemistry, phase, components, comp_type)
+        args = (target_chemistry, phase, components, comp_type, uncertainty)
         path = []
 
         def callback(x, *args):
@@ -91,6 +102,17 @@ class PhasePTEstimator(MAGEMinBase):
 
         if return_path:
             res.path = np.array(path)
+
+        # 3. Final Modelled Composition
+        # Calculate the actual composition at the best P-T point found.
+        try:
+            out = phasetools.MAGEMin_C.single_point_minimization(
+                res.x[0], res.x[1], self.data, X=self.X, Xoxides=self.Xoxides, 
+                sys_in=self.sys_in, rm_list=self.rm_list
+            )
+            res.modelled_composition = self._get_phase_composition(out, phase, components, comp_type)
+        except Exception:
+            res.modelled_composition = None
 
         return res
 

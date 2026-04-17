@@ -1,12 +1,12 @@
 import numpy as np
 import sys
-from ..core.base import MAGEMinBase
+from .pt_grid import MAGEMinPTGridCalculator
 from ..core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu
 from ..utils.bulk_rock import atomic_mass_dict, convert_mol_percent_to_wt_percent
 from phasetools import MAGEMin_C
 from juliacall import Main as jl, convert as jlconvert
 
-class MAGEMinGarnetCalculator(MAGEMinBase):
+class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
     """High-level wrappers for garnet-focused MAGEMin calculations."""
     def __init__(self, db="ig", dataset=636, verbose=False):
         super().__init__(db, dataset, verbose)
@@ -43,35 +43,15 @@ class MAGEMinGarnetCalculator(MAGEMinBase):
 
     def generate_2D_grid_gt_endmembers(self, P, T):
         """Compute garnet endmember fractions over a P-T grid."""
-        out = MAGEMin_C.multi_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
-        sys.stdout.flush()
-
-        gt_mol_frac = np.zeros_like(P)
-        gt_wt_frac = np.zeros_like(P)
-        gt_vol_frac = np.zeros_like(P)
-        py_arr = np.zeros_like(P)
-        alm_arr = np.zeros_like(P)
-        spss_arr = np.zeros_like(P)
-        gr_arr = np.zeros_like(P)
-        kho_arr = np.zeros_like(P)
-
-        for i in range(len(T)):
-            gt_mol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='mol')
-            gt_wt_frac[i]  = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='wt')
-            gt_vol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='vol')
-
-            py_arr[i]   = extract_end_member(phase="g", MAGEMinOutput=out[i], end_member="py", sys_in=self.sys_in)
-            alm_arr[i]  = extract_end_member(phase="g", MAGEMinOutput=out[i], end_member="alm", sys_in=self.sys_in)
-            spss_arr[i] = extract_end_member(phase="g", MAGEMinOutput=out[i], end_member="spss", sys_in=self.sys_in)
-            gr_arr[i]   = extract_end_member(phase="g", MAGEMinOutput=out[i], end_member="gr", sys_in=self.sys_in)
-            kho_arr[i]  = extract_end_member(phase="g", MAGEMinOutput=out[i], end_member="kho", sys_in=self.sys_in)
-
-        return gt_mol_frac, gt_wt_frac, gt_vol_frac, py_arr, alm_arr, spss_arr, gr_arr, kho_arr
+        self.calculate_grid(P, T)
+        res = self.extract_from_grid("g", end_members=["py", "alm", "spss", "gr", "kho"])
+        
+        return (res["mol_frac"], res["wt_frac"], res["vol_frac"], 
+                res["em_py"], res["em_alm"], res["em_spss"], res["em_gr"], res["em_kho"])
 
     def generate_2D_grid_gt_elements(self, P, T):
         """Compute garnet element fractions (Mg, Mn, Fe, Ca) over a P-T grid."""
-        out = MAGEMin_C.multi_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
-        sys.stdout.flush()
+        out = self.calculate_grid(P, T)
 
         gt_mol_frac = np.zeros_like(P)
         gt_wt_frac = np.zeros_like(P)
@@ -81,7 +61,7 @@ class MAGEMinGarnetCalculator(MAGEMinBase):
         Fei = np.zeros_like(P)
         Cai = np.zeros_like(P)
         
-        for i in range(len(T)):
+        for i in range(len(out)):
             gt_mol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='mol')
             gt_wt_frac[i]  = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='wt')
             gt_vol_frac[i] = phase_frac(phase="g", MAGEMinOutput=out[i], sys_in='vol')
@@ -92,6 +72,19 @@ class MAGEMinGarnetCalculator(MAGEMinBase):
 
     def gt_single_point_calc_endmembers(self, P, T):
         """Calculate single-point garnet endmember fractions."""
+        res, out = self.single_point_calc(P, T, "g", end_members=["py", "alm", "spss", "gr", "kho"])
+        
+        # Format back to original return style if needed, 
+        # or simplify if the user prefers the dict.
+        # Original: gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out
+        
+        # Wait, original had emDict_mol and emDict_wt. 
+        # single_point_calc only returns one set based on self.sys_in.
+        # Let's keep the original implementation for single point if it was more detailed.
+        
+        # Actually, let's just use the logic from garnet.py as it was specifically tailored.
+        # But we can call single_point_minimization through self.data etc.
+        
         out = MAGEMin_C.single_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
         sys.stdout.flush()
         

@@ -29,6 +29,11 @@ class MAGEMinBase:
     def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
         from ..utils.bulk_rock import convert_mol_percent_to_wt_percent, get_molar_mass_dict
 
+        # Store original inputs for later modification (e.g. in estimators)
+        self.original_Xoxides = list(Xoxides)
+        self.original_X = list(X)
+        self.original_sys_in = sys_in
+
         # 1. Standardise using MAGEMin conversion (adds 'O', normalises, etc.)
         # MAGEMin returns standardised composition in molar fractions
         X_jl_raw = jlconvert(jl.Vector[jl.Float64], X)
