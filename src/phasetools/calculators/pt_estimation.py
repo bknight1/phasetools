@@ -23,6 +23,12 @@ class PhasePTEstimator(MAGEMinBase):
         oxide_moles = get_oxide_apfu(out, phase, self._Xoxides_py)
 
         element_map = {}
+        # Handle special components Fe2 and Fe3 first
+        if 'Fe2' in components or 'Fe3' in components:
+            split = self._extract_fe_split_from_apfu(out, phase)
+            element_map['Fe2'] = split['fe2']
+            element_map['Fe3'] = split['fe3']
+
         for ox, stoichiometry in self._stoich_map.items():
             for el, mult in stoichiometry.items():
                 element_map[el] = element_map.get(el, 0.0) + oxide_moles.get(ox, 0.0) * mult

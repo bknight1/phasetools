@@ -74,3 +74,10 @@ class MAGEMinBase:
                         self._stoich_map[ox][el] = float(df.loc[el, 'Count'])
             except:
                 pass
+
+    def _extract_fe_split_from_apfu(self, out, phase):
+        """
+        Internal: Calculate Fe2+ and Fe3+ amounts for a phase using an excess oxygen heuristic.
+        """
+        from .phase_properties import get_phase_fe_split
+        return get_phase_fe_split(out, phase)

@@ -278,12 +278,12 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             new_FeG = self._interp(tG, FeG, new_t)
             new_CaG = self._interp(tG, CaG, new_t)
 
-            data = np.column_stack([new_t, new_TG, new_PG, new_MnG, new_MgG, new_FeG, new_CaG]).T
+            output = np.column_stack([new_t, new_TG, new_PG, new_MnG, new_MgG, new_FeG, new_CaG]).T
 
         else:
-             data = np.column_stack([tG, TG, PG, MnG, MgG, FeG, CaG]).T
+             output = np.column_stack([tG, TG, PG, MnG, MgG, FeG, CaG]).T
 
-        return data
+        return output
         
     def get_retrograde_concentrations(self, new_t=None):
         """Get the retrograde concentrations of garnet-forming elements.
@@ -343,8 +343,8 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
                 Fe_eval[i] = Fe_i
                 Ca_eval[i] = Ca_i
 
-            data = np.column_stack([t_eval, T_eval, P_eval, Mn_eval, Mg_eval, Fe_eval, Ca_eval]).T
-            return data
+            output = np.column_stack([t_eval, T_eval, P_eval, Mn_eval, Mg_eval, Fe_eval, Ca_eval]).T
+            return output
 
         if new_t is not None:
             # interpolate onto new time values
@@ -353,12 +353,12 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             new_FeG = self._interp(tG, FeG, t_eval)
             new_CaG = self._interp(tG, CaG, t_eval)
 
-            data = np.column_stack([t_eval, T_eval, P_eval, new_MnG, new_MgG, new_FeG, new_CaG]).T
+            output = np.column_stack([t_eval, T_eval, P_eval, new_MnG, new_MgG, new_FeG, new_CaG]).T
 
         else:
-             data = np.column_stack([tG, TG, PG, MnG, MgG, FeG, CaG]).T
+             output = np.column_stack([tG, TG, PG, MnG, MgG, FeG, CaG]).T
 
-        return data
+        return output
 
 
     def generate_garnets(self, size_dist='N'):

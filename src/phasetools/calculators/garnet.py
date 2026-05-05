@@ -12,24 +12,33 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
         super().__init__(db, dataset, verbose)
 
     def _extract_garnet_elements_from_oxides(self, out, sys_in):
-        """Extract garnet Mg-Mn-Fe-Ca cation fractions from MAGEMin garnet output."""
+        """
+        Extract garnet Mg-Mn-Fe-Ca cation fractions for the divalent (X) site.
+        Strictly isolates Fe2+ to ensure X-site fractions sum to 1.0.
+        """
         if 'g' not in out.ph:
             return 0.0, 0.0, 0.0, 0.0
 
-        elements = get_oxide_apfu(out, 'g', ['MgO', 'MnO', 'CaO', 'FeO', 'Fe2O3'])
+        # Isolating divalent iron using the robust Fe-split method
+        split = self._extract_fe_split_from_apfu(out, 'g')
+        fe2_moles = split['fe2']
+        
+        elements = get_oxide_apfu(out, 'g', ['MgO', 'MnO', 'CaO'])
         mg_moles = elements.get("MgO", 0.0)
         mn_moles = elements.get("MnO", 0.0)
         ca_moles = elements.get("CaO", 0.0)
-        fe_moles = elements.get("FeO", 0.0) + 2*elements.get("Fe2O3", 0.0)
 
-        total_cation_moles = mg_moles + mn_moles + fe_moles + ca_moles
-        if total_cation_moles <= 0:
+        # Total atoms in the X-site (should be approx 3.0)
+        total_x_site_moles = mg_moles + mn_moles + fe2_moles + ca_moles
+        
+        if total_x_site_moles <= 0:
             return 0.0, 0.0, 0.0, 0.0
 
-        Mg = mg_moles / total_cation_moles
-        Mn = mn_moles / total_cation_moles
-        Fe = fe_moles / total_cation_moles
-        Ca = ca_moles / total_cation_moles
+        # Normalise to 1.0 (mole fractions of the divalent site)
+        Mg = mg_moles / total_x_site_moles
+        Mn = mn_moles / total_x_site_moles
+        Fe = fe2_moles / total_x_site_moles
+        Ca = ca_moles / total_x_site_moles
 
         if sys_in.casefold() == 'wt':
             wt_percent_list = convert_mol_percent_to_wt_percent(
@@ -44,10 +53,10 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
     def generate_2D_grid_gt_endmembers(self, P, T):
         """Compute garnet endmember fractions over a P-T grid."""
         self.calculate_grid(P, T)
-        res = self.extract_from_grid("g", end_members=["py", "alm", "spss", "gr", "kho"])
+        # Automatic discovery of end-members
+        res = self.extract_from_grid("g", end_members='auto')
         
-        return (res["mol_frac"], res["wt_frac"], res["vol_frac"], 
-                res["em_py"], res["em_alm"], res["em_spss"], res["em_gr"], res["em_kho"])
+        return res
 
     def generate_2D_grid_gt_elements(self, P, T):
         """Compute garnet element fractions (Mg, Mn, Fe, Ca) over a P-T grid."""
@@ -72,38 +81,25 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
 
     def gt_single_point_calc_endmembers(self, P, T):
         """Calculate single-point garnet endmember fractions."""
-        res, out = self.single_point_calc(P, T, "g", end_members=["py", "alm", "spss", "gr", "kho"])
-        
-        # Format back to original return style if needed, 
-        # or simplify if the user prefers the dict.
-        # Original: gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out
-        
-        # Wait, original had emDict_mol and emDict_wt. 
-        # single_point_calc only returns one set based on self.sys_in.
-        # Let's keep the original implementation for single point if it was more detailed.
-        
-        # Actually, let's just use the logic from garnet.py as it was specifically tailored.
-        # But we can call single_point_minimization through self.data etc.
-        
         out = MAGEMin_C.single_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
         sys.stdout.flush()
         
         gt_frac = gt_wt = gt_vol = 0.
+        emDict_mol = {}
+        emDict_wt = {}
+        
         if 'g' in out.ph:
             gt_frac  = phase_frac(phase="g", MAGEMinOutput=out, sys_in='mol')
             gt_wt    = phase_frac(phase="g", MAGEMinOutput=out, sys_in='wt')
             gt_vol   = phase_frac(phase="g", MAGEMinOutput=out, sys_in='vol')
 
             ph_index = out.ph.index('g')
-            emNames = out.SS_vec[ph_index].emNames
+            emNames = [str(n) for n in out.SS_vec[ph_index].emNames]
             emFrac = out.SS_vec[ph_index].emFrac
             emFrac_wt = out.SS_vec[ph_index].emFrac_wt
 
-            emDict_mol = {name: frac for name, frac in zip(emNames, emFrac)}
-            emDict_wt  = {name: frac for name, frac in zip(emNames, emFrac_wt)}
-        else:
-            emDict_mol = {"py": 0., "alm": 0., "spss": 0., "gr": 0., "kho": 0.}
-            emDict_wt  = {"py": 0., "alm": 0., "spss": 0., "gr": 0., "kho": 0.}
+            emDict_mol = {name: float(frac) for name, frac in zip(emNames, emFrac)}
+            emDict_wt  = {name: float(frac) for name, frac in zip(emNames, emFrac_wt)}
 
         return gt_frac, gt_wt, gt_vol, emDict_mol, emDict_wt, out
 

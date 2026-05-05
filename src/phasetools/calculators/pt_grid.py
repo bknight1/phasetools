@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from ..core.base import MAGEMinBase
-from ..core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu, get_phase_chemistry
+from ..core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number
 from ..utils.bulk_rock import atomic_mass_dict, convert_mol_percent_to_wt_percent
 from phasetools import MAGEMin_C
 
@@ -68,15 +68,53 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
             unique_phases.update(o.ph)
         return sorted(list(unique_phases))
 
+    def get_phase_endmembers(self, phase, grid_out=None):
+        """
+        Discover the end-member names for a specific phase from the results.
+        Scans the grid until the phase is found stable.
+        """
+        out = grid_out if grid_out is not None else self.last_grid_out
+        if out is None:
+            return []
+            
+        # If it's a single output object (from single_point_calc)
+        if not isinstance(out, (list, np.ndarray)):
+            if phase in out.ph:
+                ph_index = out.ph.index(phase)
+                return [str(n) for n in out.SS_vec[ph_index].emNames]
+            return []
+
+        # If it's a grid
+        for o in out:
+            if phase in o.ph:
+                ph_index = o.ph.index(phase)
+                return [str(n) for n in o.SS_vec[ph_index].emNames]
+        return []
+
     def _extract_cations_from_apfu(self, out, phase, cations, sys_in):
         """Internal: Extract cation ratios (e.g., XMg, XFe) for a specific phase."""
-        ox_to_query = ['MgO', 'MnO', 'CaO', 'FeO', 'Fe2O3']
+        ox_to_query = ['MgO', 'MnO', 'CaO', 'FeO', 'Fe2O3', 'Fe', 'O']
         apfu = get_oxide_apfu(out, phase, ox_to_query)
         
         mg = apfu.get("MgO", 0.0)
         mn = apfu.get("MnO", 0.0)
         ca = apfu.get("CaO", 0.0)
-        fe = apfu.get("FeO", 0.0) + 2*apfu.get("Fe2O3", 0.0)
+        
+        feo = apfu.get("FeO", 0.0)
+        fe2o3 = apfu.get("Fe2O3", 0.0)
+        fe_metal = apfu.get("Fe", 0.0)
+        atomic_o = apfu.get("O", 0.0)
+
+        # Calculate total Fe as FeO equivalent (molar atoms)
+        if atomic_o > 0:
+            # MAGEMin O-basis (ig, mp) or sb24 basis
+            if fe_metal > 0:
+                fe = fe_metal
+            else:
+                fe = feo
+        else:
+            # Traditional FeO/Fe2O3 basis
+            fe = feo + 2.0 * fe2o3
 
         total = mg + mn + fe + ca
         if total <= 0:
@@ -92,11 +130,15 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
 
         return {f"cat_{c}": vals.get(c, 0.0) for c in cations}
 
-    def extract_from_grid(self, phase, end_members=None, oxides=None, chemistry=None, cations=None, grid_out=None):
+    def extract_from_grid(self, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False, grid_out=None):
         """Extract phase properties from a previously calculated grid."""
         out = grid_out if grid_out is not None else self.last_grid_out
         if out is None:
             raise ValueError("No grid results found. Run calculate_grid first or provide grid_out.")
+
+        # Discovery of end-members if requested
+        if end_members == 'auto':
+            end_members = self.get_phase_endmembers(phase, out)
 
         P_len = len(out)
         results = {
@@ -111,6 +153,11 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
             for ox in chemistry: results[f"chem_{ox}"] = np.zeros(P_len)
         if cations:
             for c in cations: results[f"cat_{c}"] = np.zeros(P_len)
+        if mg_number:
+            results["mg_number"] = np.zeros(P_len)
+        if fe_split:
+            results["fe2"] = np.zeros(P_len)
+            results["fe3"] = np.zeros(P_len)
 
         for i in range(P_len):
             if phase in out[i].ph:
@@ -130,15 +177,21 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
                 if cations:
                     cat_vals = self._extract_cations_from_apfu(out[i], phase, cations, self.sys_in)
                     for c in cations: results[f"cat_{c}"][i] = cat_vals[f"cat_{c}"]
+                if mg_number:
+                    results["mg_number"][i] = get_phase_mg_number(out[i], phase)
+                if fe_split:
+                    split = self._extract_fe_split_from_apfu(out[i], phase)
+                    results["fe2"][i] = split["fe2"]
+                    results["fe3"][i] = split["fe3"]
 
         return results
 
-    def generate_2D_grid(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None):
+    def generate_2D_grid(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False):
         """Convenience wrapper."""
         self.calculate_grid(P, T)
-        return self.extract_from_grid(phase, end_members, oxides, chemistry, cations)
+        return self.extract_from_grid(phase, end_members, oxides, chemistry, cations, mg_number, fe_split)
 
-    def single_point_calc(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None):
+    def single_point_calc(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False):
         """Single-point calculation."""
         out = MAGEMin_C.single_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
         sys.stdout.flush()
@@ -161,5 +214,9 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
             if cations:
                 cat_vals = self._extract_cations_from_apfu(out, phase, cations, self.sys_in)
                 for c in cations: results[f"cat_{c}"] = cat_vals[f"cat_{c}"]
+            if fe_split:
+                split = self._extract_fe_split_from_apfu(out, phase)
+                results["fe2"] = split["fe2"]
+                results["fe3"] = split["fe3"]
         
         return results, out
