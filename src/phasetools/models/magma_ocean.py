@@ -194,6 +194,10 @@ class MagmaOcean(MAGEMinBase):
         
         # Calculate volume of total LMO based on the initial melt ocean bounds
         v_total_mo_init = self.get_volume_between_radii(self.pressure_to_radius(p_start), self.pressure_to_radius(p_end))
+        
+        if starting_vol_frac <= 0 or starting_vol_frac > 1.0:
+            raise ValueError("starting_vol_frac must be in the range (0, 1.0].")
+            
         v_total_lmo = v_total_mo_init / starting_vol_frac
         v_step = vol_step * v_total_lmo
         
@@ -211,7 +215,8 @@ class MagmaOcean(MAGEMinBase):
             
             # Per Johnson et al. 2021: Stage 1 concludes when 5 vol% solid is reached 
             # for the WHOLE melt ocean. Target solid frac = vol_step / current_liquid_vol_frac.
-            target_solid_frac = vol_step / current_liquid_vol_frac
+            # Clamp to 1.0 to prevent minimization failure in the final stage.
+            target_solid_frac = min(vol_step / current_liquid_vol_frac, 1.0)
             
             # Find temperature at base pressure for target solid fraction
             T = self.find_temperature_at_vol_frac(p_base, target_solid_frac)
@@ -248,21 +253,28 @@ class MagmaOcean(MAGEMinBase):
             
             # Normalise solid modes for the layer
             total_solid = sum(layer_modes_sum.values())
-            stage_results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
+            if total_solid > 0:
+                stage_results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
+            else:
+                stage_results["layer_modes"] = {}
             
             # Update Geometry: Sinking minerals raise the bottom radius, floating ones lower the top radius.
             pl_frac = sum(stage_results["layer_modes"].get(ph, 0.0) for ph in float_phases)
             v_float = v_step * pl_frac
             v_sink = v_step * (1.0 - pl_frac)
             
+            # Ensure we don't exceed the available ocean volume (safety bound)
+            v_ocean = self.get_volume_between_radii(r_bottom, r_top)
+            v_float = min(v_float, v_ocean)
+            v_sink = min(v_sink, v_ocean - v_float)
+            
             r_bottom = np.power(r_bottom**3 + (3 * v_sink) / (4 * np.pi), 1/3)
-            r_top = np.power(r_top**3 - (3 * v_float) / (4 * np.pi), 1/3)
+            # Ensure r_top doesn't go below r_bottom
+            r_top = np.power(max(r_top**3 - (3 * v_float) / (4 * np.pi), r_bottom**3), 1/3)
             
             current_liquid_vol_frac -= vol_step
             all_stage_results.append(stage_results)
             
             if current_liquid_vol_frac <= 0: break
-            
-        return all_stage_results
             
         return all_stage_results
