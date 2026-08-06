@@ -1,12 +1,19 @@
 """Mock-based tests for solvus (multi-instance phase) handling.
 
 MAGEMin reports coexisting solvus limbs as repeated entries in ``out.ph``
-(e.g. two clinopyroxenes ``dio``, or two amphiboles ``amp``).  The
-composition helpers now take ``instance``:
+(e.g. two clinopyroxenes ``dio``, or two amphiboles ``amp``).
 
-* integer index (default ``0``) -- that instance, with a warning listing
-  the number of other instances;
-* ``'all'`` -- one value per instance (numpy array / per-instance keys).
+Two layers are tested:
+
+* the low-level composition helpers (``get_oxide_apfu``,
+  ``extract_end_member``, ...) take ``instance`` (integer index or
+  ``'all'`` for per-instance numpy arrays);
+* the grid-level ``extract_from_grid`` / ``single_point_calc`` return a
+  list of per-instance bundles indexed ``res[0]``, ``res[1]`` ...  Bundle
+  keys are unsuffixed (``mol_frac``, ``ox_apfu_Na2O``, ``em_py``, ...),
+  and each value is an array over the grid points (NaN where the phase
+  or that limb is absent).  The shape is the same for every phase; a
+  single-instance phase just has a one-element list.
 
 No live Julia runtime is needed -- ``out`` objects are mocked.
 """
@@ -14,7 +21,7 @@ No live Julia runtime is needed -- ``out`` objects are mocked.
 import unittest
 import warnings
 import numpy as np
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from phasetools.calculators.pt_grid import MAGEMinPTGridCalculator
 from phasetools.core.phase_properties import (
@@ -63,9 +70,11 @@ def _make_out(ph_list, ss_vec, ph_frac=None):
     out.ph = ph_list
     out.oxides = OXIDES
     n = len(ph_list)
-    out.ph_frac = ph_frac if ph_frac is not None else [0.1] * n
-    out.ph_frac_wt = [0.1] * n
-    out.ph_frac_vol = [0.1] * n
+    if ph_frac is None:
+        ph_frac = [0.1] * n
+    out.ph_frac = ph_frac
+    out.ph_frac_wt = list(ph_frac)
+    out.ph_frac_vol = list(ph_frac)
     out.SS_vec = ss_vec
     return out
 
@@ -161,7 +170,7 @@ class TestSolvusHelpers(unittest.TestCase):
 
 
 class TestExtractFromGridSolvus(unittest.TestCase):
-    """Grid-level extraction with instance='all' produces _0/_1 columns."""
+    """Grid extraction: list of per-instance bundles (res[0], res[1], ...)."""
 
     def _make_calc(self, grid_out):
         calc = MAGEMinPTGridCalculator.__new__(MAGEMinPTGridCalculator)
@@ -170,7 +179,7 @@ class TestExtractFromGridSolvus(unittest.TestCase):
         calc.rm_list = None
         return calc
 
-    def test_all_returns_suffixed_columns(self):
+    def _dio_grid(self):
         # point 0: dio solvus (2 limbs); point 1: single dio
         g0 = _make_out(['dio', 'q', 'dio', 'g'],
                        [_dio_0(), None, _dio_1(), _garnet()],
@@ -178,95 +187,178 @@ class TestExtractFromGridSolvus(unittest.TestCase):
         g1 = _make_out(['q', 'g', 'dio'],
                        [None, _garnet(), _dio_0()],
                        ph_frac=[0.5, 0.2, 0.3])
+        return [g0, g1]
+
+    def test_uniform_shape_single_and_solvus(self):
+        """A single-instance phase and a solvus return the same bundle keys."""
+        calc = self._make_calc(self._dio_grid())
+        solvus = calc.extract_from_grid('dio', oxides=['Na2O', 'MgO'],
+                                        mg_number=True, fe_split=True)
+        single = calc.extract_from_grid('g', oxides=['MgO'],
+                                        mg_number=True, fe_split=True)
+
+        # dio: two bundles; garnet: one bundle (always at res[0])
+        self.assertEqual(len(solvus), 2)
+        self.assertEqual(len(single), 1)
+
+        for bundle in solvus + single:
+            for key in ('mol_frac', 'wt_frac', 'vol_frac',
+                        'ox_apfu_Na2O' if 'ox_apfu_Na2O' in bundle else 'ox_apfu_MgO',
+                        'Mg_number', 'Fe2', 'Fe3'):
+                self.assertIn(key, bundle)
+        # unsuffixed keys inside each bundle (no _0/_1, no total_*)
+        self.assertIn('mol_frac', solvus[0])
+        self.assertNotIn('mol_frac_0', solvus[0])
+        self.assertNotIn('total_mol_frac', solvus[0])
+
+    def test_limb_bundles(self):
+        calc = self._make_calc(self._dio_grid())
+        res = calc.extract_from_grid('dio', oxides=['Na2O'])
+        c0, c1 = res
+        # limb fractions (0.3/0.1 at point 0; point 1 has only limb 0)
+        self.assertTrue(np.allclose(c0['mol_frac'], [0.3, 0.3]))
+        self.assertAlmostEqual(c0['wt_frac'][0], 0.3)
+        self.assertAlmostEqual(c0['vol_frac'][0], 0.3)
+        self.assertAlmostEqual(c1['mol_frac'][0], 0.1)
+        self.assertAlmostEqual(c0['ox_apfu_Na2O'][0], 0.26)
+        self.assertAlmostEqual(c1['ox_apfu_Na2O'][0], 0.41)
+        # user can sum the limbs themselves
+        total = c0['mol_frac'] + c1['mol_frac']
+        self.assertAlmostEqual(total[0], 0.4)
+
+    def test_nan_when_limb_absent(self):
+        calc = self._make_calc(self._dio_grid())
+        res = calc.extract_from_grid('dio', oxides=['Na2O'], mg_number=True)
+        c0, c1 = res
+        # point 1 has a single dio -> limb-1 values NaN
+        self.assertTrue(np.isnan(c1['mol_frac'][1]))
+        self.assertTrue(np.isnan(c1['wt_frac'][1]))
+        self.assertTrue(np.isnan(c1['ox_apfu_Na2O'][1]))
+        self.assertTrue(np.isnan(c1['Mg_number'][1]))
+        # limb 0 is filled
+        self.assertAlmostEqual(c0['mol_frac'][1], 0.3)
+        self.assertAlmostEqual(c0['ox_apfu_Na2O'][1], 0.26)
+
+    def test_absent_phase_bundles_nan(self):
+        g0 = _make_out(['dio', 'q', 'dio', 'g'],
+                       [_dio_0(), None, _dio_1(), _garnet()],
+                       ph_frac=[0.3, 0.2, 0.1, 0.4])
+        g2 = _make_out(['q', 'g'], [None, _garnet()], ph_frac=[0.6, 0.4])
+        calc = self._make_calc([g0, g2])
+        res = calc.extract_from_grid('dio', oxides=['Na2O'])
+        c0, c1 = res
+        # point 1: dio absent -> NaN in every bundle
+        self.assertTrue(np.isnan(c0['mol_frac'][1]))
+        self.assertTrue(np.isnan(c1['mol_frac'][1]))
+        self.assertTrue(np.isnan(c0['ox_apfu_Na2O'][1]))
+
+    def test_absent_everywhere_empty(self):
+        """Phase never stable -> empty list."""
+        g0 = _make_out(['q', 'g'], [None, _garnet()], ph_frac=[0.6, 0.4])
+        g1 = _make_out(['q', 'g'], [None, _garnet()], ph_frac=[0.5, 0.5])
         calc = self._make_calc([g0, g1])
+        res = calc.extract_from_grid('dio', oxides=['Na2O'], mg_number=True)
+        self.assertEqual(res, [])
 
-        res = calc.extract_from_grid('dio', oxides=['Na2O', 'MgO'],
-                                     mg_number=True, fe_split=True,
-                                     instance='all')
-
-        self.assertIn('ox_apfu_Na2O_0', res)
-        self.assertIn('ox_apfu_Na2O_1', res)
-        self.assertIn('Mg_number_0', res)
-        self.assertIn('Mg_number_1', res)
-        self.assertIn('Fe2_0', res)
-        self.assertIn('Fe2_1', res)
-        # point 0 first limb
-        self.assertAlmostEqual(res['ox_apfu_Na2O_0'][0], 0.26)
-        # point 0 second limb
-        self.assertAlmostEqual(res['ox_apfu_Na2O_1'][0], 0.41)
-        # point 1 has a single dio -> second column NaN
-        self.assertAlmostEqual(res['ox_apfu_Na2O_0'][1], 0.26)
-        self.assertTrue(np.isnan(res['ox_apfu_Na2O_1'][1]))
-
-    def test_all_emits_per_instance_fractions(self):
-        """instance='all' gives mol/wt/vol_frac_0/_1 plus summed totals."""
-        g0 = _make_out(['dio', 'q', 'dio', 'g'],
-                       [_dio_0(), None, _dio_1(), _garnet()],
-                       ph_frac=[0.3, 0.2, 0.1, 0.4])
-        g1 = _make_out(['q', 'g', 'dio'],
-                       [None, _garnet(), _dio_0()],
-                       ph_frac=[0.5, 0.2, 0.3])
-        calc = self._make_calc([g0, g1])
-
-        res = calc.extract_from_grid('dio', oxides=['Na2O'], instance='all')
-
-        # summed totals unchanged (limbs 0.3 + 0.1 at point 0)
-        self.assertAlmostEqual(res['mol_frac'][0], 0.4)
-        self.assertAlmostEqual(res['mol_frac'][1], 0.3)
-        # per-instance columns
-        self.assertIn('mol_frac_0', res)
-        self.assertIn('mol_frac_1', res)
-        self.assertIn('wt_frac_0', res)
-        self.assertIn('wt_frac_1', res)
-        self.assertIn('vol_frac_0', res)
-        self.assertIn('vol_frac_1', res)
-        self.assertAlmostEqual(res['mol_frac_0'][0], 0.3)
-        self.assertAlmostEqual(res['mol_frac_1'][0], 0.1)
-        self.assertAlmostEqual(res['mol_frac_0'][1], 0.3)
-        self.assertTrue(np.isnan(res['mol_frac_1'][1]))  # single limb at point 1
-
-    def test_default_has_no_fraction_suffixes(self):
-        """Integer instance keeps single (summed) fraction keys."""
-        g0 = _make_out(['dio', 'q', 'dio', 'g'],
-                       [_dio_0(), None, _dio_1(), _garnet()],
-                       ph_frac=[0.3, 0.2, 0.1, 0.4])
-        calc = self._make_calc([g0])
-        res = calc.extract_from_grid('dio', oxides=['Na2O'], instance=0)
-        self.assertIn('mol_frac', res)
-        self.assertNotIn('mol_frac_0', res)
-        self.assertNotIn('wt_frac_0', res)
-
-    def test_default_is_first_instance_no_suffix(self):
-        g0 = _make_out(['dio', 'q', 'dio', 'g'],
-                       [_dio_0(), None, _dio_1(), _garnet()],
-                       ph_frac=[0.3, 0.2, 0.1, 0.4])
-        calc = self._make_calc([g0])
-        res = calc.extract_from_grid('dio', oxides=['Na2O'], instance=0)
-        self.assertIn('ox_apfu_Na2O', res)
-        self.assertNotIn('ox_apfu_Na2O_0', res)
-        self.assertAlmostEqual(res['ox_apfu_Na2O'][0], 0.26)
-
-    def test_single_instance_phase_unaffected(self):
-        g0 = _make_out(['dio', 'q', 'dio', 'g'],
-                       [_dio_0(), None, _dio_1(), _garnet()],
-                       ph_frac=[0.3, 0.2, 0.1, 0.4])
-        calc = self._make_calc([g0])
-        res = calc.extract_from_grid('g', oxides=['MgO'], instance='all')
-        # garnet has a single instance -> single _0 column
-        self.assertIn('ox_apfu_MgO_0', res)
-        self.assertNotIn('ox_apfu_MgO_1', res)
-        self.assertAlmostEqual(res['ox_apfu_MgO_0'][0], 0.70)
+    def test_single_instance_phase_filled(self):
+        calc = self._make_calc(self._dio_grid())
+        res = calc.extract_from_grid('g', oxides=['MgO'])
+        bundle = res[0]
+        self.assertAlmostEqual(bundle['mol_frac'][0], 0.4)
+        self.assertAlmostEqual(bundle['ox_apfu_MgO'][0], 0.70)
 
     def test_cations_per_instance(self):
+        calc = self._make_calc(self._dio_grid())
+        res = calc.extract_from_grid('dio', cations=['Mg', 'Fe'])
+        c0, c1 = res
+        self.assertIn('cat_Mg', c0)
+        self.assertIn('cat_Mg', c1)
+        # first limb is Mg-richer
+        self.assertGreater(c0['cat_Mg'][0], c1['cat_Mg'][0])
+
+    def test_end_members_per_instance(self):
+        calc = self._make_calc(self._dio_grid())
+        res = calc.extract_from_grid('dio', end_members=['di', 'om'])
+        c0, c1 = res
+        self.assertAlmostEqual(c0['em_di'][0], 0.60)
+        self.assertAlmostEqual(c1['em_di'][0], 0.40)
+        self.assertAlmostEqual(c0['em_om'][0], 0.25)
+        self.assertAlmostEqual(c1['em_om'][0], 0.40)
+
+
+class TestSinglePointCalcSolvus(unittest.TestCase):
+    """single_point_calc returns the same nested-bundle schema."""
+
+    def _make_calc(self):
+        calc = MAGEMinPTGridCalculator.__new__(MAGEMinPTGridCalculator)
+        calc.sys_in = 'mol'
+        calc.data = None
+        calc.X = None
+        calc.Xoxides = None
+        calc.rm_list = None
+        return calc
+
+    def test_solvus_returns_limb_bundles(self):
         g0 = _make_out(['dio', 'q', 'dio', 'g'],
                        [_dio_0(), None, _dio_1(), _garnet()],
                        ph_frac=[0.3, 0.2, 0.1, 0.4])
-        calc = self._make_calc([g0])
-        res = calc.extract_from_grid('dio', cations=['Mg', 'Fe'], instance='all')
-        self.assertIn('cat_Mg_0', res)
-        self.assertIn('cat_Mg_1', res)
-        # first limb is Mg-richer
-        self.assertGreater(res['cat_Mg_0'][0], res['cat_Mg_1'][0])
+        calc = self._make_calc()
+        with patch('phasetools.calculators.pt_grid.MAGEMin_C') as m:
+            m.single_point_minimization.return_value = g0
+            res, out = calc.single_point_calc(10.0, 600.0, 'dio',
+                                              oxides=['Na2O', 'MgO'])
+        self.assertEqual(len(res), 2)
+        c0, c1 = res
+        self.assertAlmostEqual(c0['mol_frac'], 0.3)
+        self.assertAlmostEqual(c1['mol_frac'], 0.1)
+        self.assertAlmostEqual(c0['wt_frac'], 0.3)
+        self.assertAlmostEqual(c1['wt_frac'], 0.1)
+        self.assertAlmostEqual(c0['ox_apfu_Na2O'], 0.26)
+        self.assertAlmostEqual(c1['ox_apfu_Na2O'], 0.41)
+        self.assertIs(out, g0)
+
+    def test_single_instance_has_one_bundle(self):
+        g = _make_out(['q', 'g'], [None, _garnet()], ph_frac=[0.6, 0.4])
+        calc = self._make_calc()
+        with patch('phasetools.calculators.pt_grid.MAGEMin_C') as m:
+            m.single_point_minimization.return_value = g
+            res, _ = calc.single_point_calc(10.0, 600.0, 'g', oxides=['MgO'])
+        self.assertEqual(len(res), 1)
+        bundle = res[0]
+        self.assertAlmostEqual(bundle['mol_frac'], 0.4)
+        self.assertAlmostEqual(bundle['ox_apfu_MgO'], 0.70)
+
+    def test_absent_phase_no_bundles(self):
+        g = _make_out(['q', 'g'], [None, _garnet()], ph_frac=[0.6, 0.4])
+        calc = self._make_calc()
+        with patch('phasetools.calculators.pt_grid.MAGEMin_C') as m:
+            m.single_point_minimization.return_value = g
+            res, _ = calc.single_point_calc(10.0, 600.0, 'dio')
+        self.assertEqual(res, [])
+
+
+class TestGarnetEndmembersSuffix(unittest.TestCase):
+    """generate_2D_grid_gt_endmembers returns the single-instance bundle."""
+
+    def test_returns_bundle_with_historical_keys(self):
+        from phasetools.calculators.garnet import MAGEMinGarnetCalculator
+        calc = MAGEMinGarnetCalculator.__new__(MAGEMinGarnetCalculator)
+        bundle = {
+            'mol_frac': np.array([0.10, 0.15]),
+            'wt_frac': np.array([0.11, 0.16]),
+            'vol_frac': np.array([0.12, 0.17]),
+            'em_py': np.array([0.20, 0.30]),
+            'em_alm': np.array([0.60, 0.50]),
+            'em_gr': np.array([0.16, 0.17]),
+            'em_spss': np.array([0.04, 0.03]),
+        }
+        with patch.object(calc, 'calculate_grid', return_value=None), \
+             patch.object(calc, 'extract_from_grid', return_value=[bundle]):
+            res = calc.generate_2D_grid_gt_endmembers([10.0], [600.0])
+        self.assertIn('em_py', res)
+        self.assertIn('em_alm', res)
+        self.assertIn('mol_frac', res)
+        self.assertTrue(np.allclose(res['em_py'], [0.20, 0.30]))
 
 
 if __name__ == '__main__':

@@ -91,12 +91,18 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
         return Mg, Mn, Fe, Ca
 
     def generate_2D_grid_gt_endmembers(self, P, T):
-        """Compute garnet endmember fractions over a P-T grid."""
+        """Compute garnet endmember fractions over a P-T grid.
+
+        Garnet is a single-instance phase, so its single per-instance
+        bundle is returned directly, preserving the historical key names
+        (``em_py``, ``em_alm``, ``mol_frac``, ...).  If garnet ever
+        appeared as a solvus, the list of bundles would be returned
+        instead.
+        """
         self.calculate_grid(P, T)
         # Automatic discovery of end-members
         res = self.extract_from_grid("g", end_members='auto')
-        
-        return res
+        return res[0] if len(res) == 1 else res
 
     def generate_2D_grid_gt_elements(self, P, T):
         """Compute garnet element fractions (Mg, Mn, Fe, Ca) over a P-T grid."""
