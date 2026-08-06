@@ -22,3 +22,24 @@ The `core` submodule provides the foundational classes and low-level bridging lo
     - `get_phase_mg2_number`: Phase-wide $Mg\#$ (Divalent Iron only).
     - `get_phase_fe_split`: Heuristic splitting of total iron into $\text{Fe}^{2+}$ and $\text{Fe}^{3+}$.
     - `calculate_kd_fe_mg`: Distribution coefficients between phases.
+
+### Solvus (multi-instance) handling
+MAGEMin reports coexisting solvus limbs as repeated entries in `out.ph`
+(e.g. two `dio` clinopyroxenes or two `amp` amphiboles). `phase_frac`
+sums them; the per-phase composition helpers take an `instance` argument:
+
+- integer index (default `0`) — that instance, with a `UserWarning`
+  noting how many other instances exist (`_phase_indices` raises
+  `ValueError` for non-integer, non-`'all'` values);
+- `'all'` — one value per instance, returned as numpy arrays
+  (`get_oxide_apfu` → `{oxide: ndarray}`, `extract_end_member`,
+  `get_phase_mg_number`, `get_phase_mg2_number`, `get_phase_fe_split`).
+
+`MAGEMinPTGridCalculator.extract_from_grid` / `single_point_calc` /
+`generate_2D_grid` accept the same `instance` argument. With
+`instance='all'` they emit one column per instance keyed with a
+`_0`, `_1`, ... suffix (e.g. `ox_apfu_Na2O_0`); grid points where the
+phase has fewer instances are NaN-padded. `mol_frac`/`wt_frac`/
+`vol_frac` always give the summed totals (matching `phase_frac`); with
+`instance='all'` additional per-instance columns `mol_frac_0`,
+`mol_frac_1`, ... are emitted alongside them.
