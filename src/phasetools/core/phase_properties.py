@@ -1,24 +1,93 @@
 import numpy as np
+import warnings
 
-def get_oxide_apfu(out, ph, oxides):
-    """Extract oxide amounts from APFU output for a specific phase."""
-    try:
-        ph_index = out.ph.index(ph)
-        phase_obj = out.SS_vec[ph_index]
 
-        oxide_values = np.array(phase_obj.Comp_apfu, dtype=float)
-        oxide_names = [str(ox) for ox in out.oxides]
-        oxide_moles_dict = {ox: value for ox, value in zip(oxide_names, oxide_values)}
+def _phase_indices(out, phase, instance=0):
+    """Return the index/indices of ``phase`` in ``out.ph``.
 
-        results = {}
-        for oxide in oxides:
-            results[oxide] = oxide_moles_dict.get(oxide, 0.0)
-    except (ValueError, IndexError):
-        results = {oxide: 0.0 for oxide in oxides}
+    Parameters
+    ----------
+    out : object
+        MAGEMin output object with a ``ph`` attribute.
+    phase : str
+        Phase name.
+    instance : int or {'all'}, default=0
+        Which instance to resolve.  An integer index selects that instance
+        (negative indices count from the end).  ``'all'`` returns every
+        occurrence.  When the phase appears more than once (a solvus -- e.g.
+        two coexisting clinopyroxenes or amphiboles, reported by MAGEMin as
+        repeated entries in ``out.ph``), a warning notes how many other
+        instances exist.
 
-    return results
+    Returns
+    -------
+    list[int]
+        Indices of ``phase`` in ``out.ph`` (empty list if the phase is
+        absent or the requested instance does not exist).
+    """
+    idx = [i for i, p in enumerate(out.ph) if str(p) == phase]
+    if instance == 'all':
+        return idx
+    if not isinstance(instance, (int, np.integer)):
+        raise ValueError(f"instance must be an integer index or 'all', got {instance!r}")
+    if not idx:
+        return []
+    if instance < 0:
+        instance = len(idx) + instance
+    if instance < 0 or instance >= len(idx):
+        warnings.warn(
+            f"phase '{phase}' has {len(idx)} instance(s); requested instance "
+            f"{instance} does not exist -- treating as absent.",
+            UserWarning, stacklevel=3)
+        return []
+    if len(idx) > 1:
+        warnings.warn(
+            f"phase '{phase}' has {len(idx)} instances (solvus) in this "
+            f"output; using instance {instance} (there are {len(idx) - 1} "
+            f"others). Use instance='all' for per-instance arrays.",
+            UserWarning, stacklevel=3)
+    return [idx[instance]]
 
-def get_phase_chemistry(out, ph, oxides, sys_in):
+def get_oxide_apfu(out, ph, oxides, instance=0):
+    """Extract oxide amounts from APFU output for a specific phase.
+
+    Parameters
+    ----------
+    out : object
+        MAGEMin output object.
+    ph : str
+        Phase name.
+    oxides : list[str]
+        Oxides to extract.
+    instance : int or {'all'}, default=0
+        For a phase that appears multiple times (a solvus), an integer
+        index selects that instance (warning if more than one exists) and
+        ``'all'`` returns one value per instance as numpy arrays.
+
+    Returns
+    -------
+    dict
+        ``{oxide: value}`` for an integer index, or ``{oxide: ndarray}``
+        (one entry per phase instance) for ``'all'``.
+    """
+    idx = _phase_indices(out, ph, instance)
+    if not idx:
+        return {oxide: 0.0 for oxide in oxides} if instance != 'all' \
+            else {oxide: np.zeros(0) for oxide in oxides}
+    oxide_names = [str(ox) for ox in out.oxides]
+    per = []
+    for i in idx:
+        try:
+            values = np.array(out.SS_vec[i].Comp_apfu, dtype=float)
+            per.append({ox: float(values[oxide_names.index(ox)])
+                        if ox in oxide_names else 0.0 for ox in oxides})
+        except (ValueError, IndexError, AttributeError):
+            per.append({ox: 0.0 for ox in oxides})
+    if instance == 'all':
+        return {ox: np.array([d[ox] for d in per]) for ox in oxides}
+    return per[0]
+
+def get_phase_chemistry(out, ph, oxides, sys_in, instance=0):
     """
     Extract oxide concentrations (wt% or mol%) for a specific phase.
     
@@ -32,46 +101,61 @@ def get_phase_chemistry(out, ph, oxides, sys_in):
         List of oxides to extract.
     sys_in : str
         Unit system ('wt' or 'mol').
+    instance : int or {'all'}, default=0
+        For a phase that appears multiple times (a solvus), an integer
+        index selects that instance (warning if more than one exists) and
+        ``'all'`` returns one value per instance as numpy arrays.
         
     Returns
     -------
     dict
-        Oxide concentrations.
+        Oxide concentrations for an integer index, or per-instance arrays
+        for ``'all'``.
     """
-    try:
-        ph_index = out.ph.index(ph)
-        phase_obj = out.SS_vec[ph_index]
+    idx = _phase_indices(out, ph, instance)
+    if not idx:
+        return {oxide: 0.0 for oxide in oxides} if instance != 'all' \
+            else {oxide: np.zeros(0) for oxide in oxides}
+    oxide_names = [str(ox) for ox in out.oxides]
+    per = []
+    for i in idx:
+        try:
+            phase_obj = out.SS_vec[i]
+            if sys_in.casefold() == 'wt':
+                # Comp_wt is weight fraction (0-1) for oxides in the phase
+                values = np.array(phase_obj.Comp_wt, dtype=float) * 100.0
+            else:
+                # Comp is molar fraction (0-1) for oxides in the phase
+                values = np.array(phase_obj.Comp, dtype=float) * 100.0
+            per.append({ox: float(values[oxide_names.index(ox)])
+                        if ox in oxide_names else 0.0 for ox in oxides})
+        except (ValueError, IndexError, AttributeError):
+            per.append({ox: 0.0 for ox in oxides})
+    if instance == 'all':
+        return {ox: np.array([d[ox] for d in per]) for ox in oxides}
+    return per[0]
 
-        if sys_in.casefold() == 'wt':
-            # Comp_wt is weight fraction (0-1) for oxides in the phase
-            values = np.array(phase_obj.Comp_wt, dtype=float) * 100.0
-        else:
-            # Comp is molar fraction (0-1) for oxides in the phase
-            values = np.array(phase_obj.Comp, dtype=float) * 100.0
-            
-        oxide_names = [str(ox) for ox in out.oxides]
-        oxide_dict = {ox: value for ox, value in zip(oxide_names, values)}
+def extract_end_member(phase, MAGEMinOutput, end_member, sys_in, instance=0):
+    """Extract specific end-member fraction from MAGEMin output.
 
-        results = {}
-        for oxide in oxides:
-            results[oxide] = oxide_dict.get(oxide, 0.0)
-    except (ValueError, IndexError):
-        results = {oxide: 0.0 for oxide in oxides}
-
-    return results
-
-def extract_end_member(phase, MAGEMinOutput, end_member, sys_in):
-    """Extract specific end-member fraction from MAGEMin output."""
-    try:
-        phase_ind = MAGEMinOutput.ph.index(phase)
-        em_index = MAGEMinOutput.SS_vec[phase_ind].emNames.index(end_member)
-        if sys_in.casefold() == 'wt':
-            data = MAGEMinOutput.SS_vec[phase_ind].emFrac_wt[em_index]
-        else:
-            data = MAGEMinOutput.SS_vec[phase_ind].emFrac[em_index]
-    except (ValueError, IndexError):
-        data = 0.
-    return data
+    For a phase that appears multiple times (a solvus), ``instance=0``
+    returns the first instance (warning if more than one exists) and
+    ``instance='all'`` returns one value per instance as a numpy array.
+    """
+    idx = _phase_indices(MAGEMinOutput, phase, instance)
+    if not idx:
+        return 0.0 if instance != 'all' else np.zeros(0)
+    vals = []
+    for i in idx:
+        try:
+            em_index = MAGEMinOutput.SS_vec[i].emNames.index(end_member)
+            if sys_in.casefold() == 'wt':
+                vals.append(float(MAGEMinOutput.SS_vec[i].emFrac_wt[em_index]))
+            else:
+                vals.append(float(MAGEMinOutput.SS_vec[i].emFrac[em_index]))
+        except (ValueError, IndexError, AttributeError):
+            vals.append(0.0)
+    return float(vals[0]) if instance != 'all' else np.array(vals)
 
 def phase_frac(phase, MAGEMinOutput, sys_in):
     """
@@ -97,7 +181,7 @@ def phase_frac(phase, MAGEMinOutput, sys_in):
     except:
         return 0.0
 
-def get_phase_mg_number(out, ph):
+def get_phase_mg_number(out, ph, instance=0):
     """
     Calculate Mg# (molar Mg / (Mg + Fe_total)) for a specific phase.
     
@@ -107,109 +191,97 @@ def get_phase_mg_number(out, ph):
     Matches the logic used by MAGEMin's 'ss_MgNum' mode by pulling 
     MgO and FeO directly from the phase's Comp_apfu array.
     Supports 'FeO', 'Fe' (sb24), and 'Fe2O3' fallback.
+
+    For a phase that appears multiple times (a solvus), ``instance=0``
+    returns the first instance (warning if more than one exists) and
+    ``instance='all'`` returns one value per instance as a numpy array.
     """
-    try:
-        ph_index = out.ph.index(ph)
-        phase_obj = out.SS_vec[ph_index]
-        
-        oxide_names = [str(ox) for ox in out.oxides]
-        
-        # Pull Mg
+    idx = _phase_indices(out, ph, instance)
+    if not idx:
+        return 0.0 if instance != 'all' else np.zeros(0)
+    oxide_names = [str(ox) for ox in out.oxides]
+
+    def _mg(i):
         try:
-            mg_idx = oxide_names.index('MgO')
-            mg = float(phase_obj.Comp_apfu[mg_idx])
-        except ValueError:
-            mg = 0.0
-            
-        # Pull Fe (total iron atoms)
-        fe = 0.0
-        if 'FeO' in oxide_names:
-            fe_idx = oxide_names.index('FeO')
-            fe += float(phase_obj.Comp_apfu[fe_idx])
-            # If both are present, we sum them (though unlikely in standard MAGEMin output)
-            if 'Fe2O3' in oxide_names:
-                fe2o3_idx = oxide_names.index('Fe2O3')
-                fe += 2.0 * float(phase_obj.Comp_apfu[fe2o3_idx])
-        elif 'Fe' in oxide_names:
-            fe_idx = oxide_names.index('Fe')
-            fe += float(phase_obj.Comp_apfu[fe_idx])
-        elif 'Fe2O3' in oxide_names:
-            fe2o3_idx = oxide_names.index('Fe2O3')
-            fe += 2.0 * float(phase_obj.Comp_apfu[fe2o3_idx])
-        else:
-            # No iron components found
-            if mg == 0: return 0.0
-            return 1.0 # Pure Mg phase
-            
-        denominator = mg + fe
-        if denominator == 0:
+            phase_obj = out.SS_vec[i]
+            mg = float(phase_obj.Comp_apfu[oxide_names.index('MgO')]) if 'MgO' in oxide_names else 0.0
+            fe = 0.0
+            if 'FeO' in oxide_names:
+                fe += float(phase_obj.Comp_apfu[oxide_names.index('FeO')])
+                if 'Fe2O3' in oxide_names:
+                    fe += 2.0 * float(phase_obj.Comp_apfu[oxide_names.index('Fe2O3')])
+            elif 'Fe' in oxide_names:
+                fe += float(phase_obj.Comp_apfu[oxide_names.index('Fe')])
+            elif 'Fe2O3' in oxide_names:
+                fe += 2.0 * float(phase_obj.Comp_apfu[oxide_names.index('Fe2O3')])
+            else:
+                return 1.0 if mg > 0 else 0.0
+            denom = mg + fe
+            return mg / denom if denom else 0.0
+        except (ValueError, IndexError, AttributeError):
             return 0.0
 
-        return mg / denominator
-    except (ValueError, IndexError, AttributeError):
-        return 0.0
+    vals = [_mg(i) for i in idx]
+    return float(vals[0]) if instance != 'all' else np.array(vals)
 
-def get_phase_fe_split(out, ph):
+def get_phase_fe_split(out, ph, instance=0):
     """
     Calculate Fe2+ and Fe3+ amounts for a phase using an excess oxygen heuristic.
     
     Works for both traditional FeO-Fe2O3 bases and MAGEMin's O-basis (ig, mp).
+
+    For a phase that appears multiple times (a solvus), ``instance=0``
+    returns the first instance (warning if more than one exists) and
+    ``instance='all'`` returns one value per instance as numpy arrays.
     """
-    try:
-        ox_to_query = ['FeO', 'Fe2O3', 'Fe', 'O']
-        apfu = get_oxide_apfu(out, ph, ox_to_query)
-        
-        feo_val = apfu.get("FeO", 0.0)
-        fe2o3_val = apfu.get("Fe2O3", 0.0)
-        fe_metal_val = apfu.get("Fe", 0.0)
-        atomic_o = apfu.get("O", 0.0)
+    apfu = get_oxide_apfu(out, ph, ['FeO', 'Fe2O3', 'Fe', 'O'], instance=instance)
 
-        # 1. Calculate Total Fe atoms (Atoms per formula unit)
-        if atomic_o > 0:
-            # MAGEMin O-basis (ig, mp) or sb24 basis
-            # If Fe component is present (sb24), use it; otherwise FeO is total iron.
-            if fe_metal_val > 0:
-                total_fe = fe_metal_val
-            else:
-                total_fe = feo_val
-        else:
-            # Traditional FeO/Fe2O3 basis
-            total_fe = feo_val + 2.0 * fe2o3_val
+    feo = np.asarray(apfu.get("FeO", 0.0), dtype=float)
+    fe2o3 = np.asarray(apfu.get("Fe2O3", 0.0), dtype=float)
+    fem = np.asarray(apfu.get("Fe", 0.0), dtype=float)
+    ato = np.asarray(apfu.get("O", 0.0), dtype=float)
 
-        # 2. Calculate Fe3+ atoms using excess oxygen heuristic
-        # excess_o identifies oxygen atoms added beyond the stoichiometric baseline.
-        # Works for both 'O as total oxygen' and 'O as excess oxygen' components.
-        excess_o = max(atomic_o - np.round(atomic_o), 0.0)
-        fe3 = 2.0 * fe2o3_val + 2.0 * excess_o
-        
-        # 3. Divalent iron is the remainder
-        fe2 = max(total_fe - fe3, 0.0)
+    if ato.size == 0:
+        empty = {"Fe2": np.zeros(0), "Fe3": np.zeros(0)}
+        return {"Fe2": 0.0, "Fe3": 0.0} if instance != 'all' else empty
 
-        return {
-            "fe2": fe2, 
-            "fe3": fe3, 
-        }
-    except:
-        return {"fe2": 0.0, "fe3": 0.0}
+    # 1. Calculate Total Fe atoms (Atoms per formula unit)
+    if np.any(ato > 0):
+        # MAGEMin O-basis (ig, mp) or sb24 basis
+        total_fe = fem if np.any(fem > 0) else feo
+    else:
+        # Traditional FeO/Fe2O3 basis
+        total_fe = feo + 2.0 * fe2o3
 
-def get_phase_mg2_number(out, ph):
+    # 2. Calculate Fe3+ atoms using excess oxygen heuristic
+    excess_o = np.maximum(ato - np.floor(ato), 0.0)
+    fe3 = 2.0 * fe2o3 + 2.0 * excess_o
+
+    # 3. Divalent iron is the remainder
+    fe2 = np.maximum(np.asarray(total_fe) - fe3, 0.0)
+
+    if instance != 'all':
+        return {"Fe2": float(np.squeeze(fe2)), "Fe3": float(np.squeeze(fe3))}
+    return {"Fe2": fe2, "Fe3": fe3}
+
+def get_phase_mg2_number(out, ph, instance=0):
     """
     Calculate Mg# (molar Mg / (Mg + Fe2+)) for a specific phase.
     
     Uses an excess oxygen heuristic to split total iron into Fe2+ and Fe3+.
     """
     try:
-        apfu = get_oxide_apfu(out, ph, ['MgO'])
+        apfu = get_oxide_apfu(out, ph, ['MgO'], instance=instance)
         mg = apfu.get('MgO', 0.0)
         
-        split = get_phase_fe_split(out, ph)
-        fe2 = split['fe2']
+        split = get_phase_fe_split(out, ph, instance=instance)
+        fe2 = split['Fe2']
         
         denominator = mg + fe2
-        if denominator == 0:
-            return 0.0
+        if np.any(np.asarray(denominator) <= 0):
+            return 0.0 if instance != 'all' else np.zeros(len(mg))
             
-        return mg / denominator
+        return (mg / denominator) if instance != 'all' else np.asarray(mg / denominator, dtype=float)
     except:
         return 0.0
 
