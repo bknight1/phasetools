@@ -9,7 +9,7 @@ MAGEMin_C.seval("using MAGEMin_C")
 # Expose Public API
 from .core.base import MAGEMinBase
 from .core.engine import single_point_minimization_with_conversion
-from .core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number, calculate_kd_fe_mg
+from .core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number, get_phase_mg2_number, get_phase_fe_split, calculate_kd_fe_mg
 
 from .calculators.garnet import MAGEMinGarnetCalculator
 from .calculators.assemblage import MAGEMinAssemblageCalculator
@@ -18,5 +18,6 @@ from .calculators.phase_search import PhaseFunctions
 from .calculators.pt_grid import MAGEMinPTGridCalculator
 
 from .models.garnet_growth import GarnetGenerator, generate_distribution
+from .models.magma_ocean import MagmaOcean
 
 from .utils import bulk_rock
