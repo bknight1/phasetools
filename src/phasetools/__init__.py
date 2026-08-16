@@ -1,10 +1,24 @@
 # ### Core imports and Public API
 
 ### Import juliacall to access MAGEMin_C
-import juliacall
+try:
+    import juliacall
+    from juliacall import Main as jl, convert as jlconvert
 
-MAGEMin_C = juliacall.newmodule("MAGEMin_C")
-MAGEMin_C.seval("using MAGEMin_C")
+    MAGEMin_C = juliacall.newmodule("MAGEMin_C")
+    MAGEMin_C.seval("using MAGEMin_C")
+except Exception as _e:
+    import warnings as _warnings
+
+    _warnings.warn(
+        f"Julia/MAGEMin_C not available: {_e}. "
+        "Phase calculations requiring MAGEMin will fail. "
+        "Install Julia and MAGEMin_C: phasetools-julia-setup --install",
+        stacklevel=2,
+    )
+    MAGEMin_C = None
+    jl = None
+    jlconvert = None
 
 # Expose Public API
 from .core.base import MAGEMinBase
