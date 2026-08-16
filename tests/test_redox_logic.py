@@ -222,5 +222,27 @@ class TestRedoxLogic(unittest.TestCase):
         kd = calculate_kd_fe_mg(mock_out, 'g', 'cpx')
         self.assertAlmostEqual(kd, 2.0, places=1)
 
+    def test_get_phase_mg2_number_element_wise(self):
+        """instance='all' must compute Mg# element-wise, not collapse on one zero denominator."""
+        from phasetools.core.phase_properties import get_phase_mg2_number
+
+        # Two instances of 'ol': one Mg-free, one Fe-free.
+        mock_out = MagicMock()
+        mock_out.ph = ['ol', 'ol']
+        mock_out.oxides = ['MgO', 'FeO', 'O']
+
+        mock_ol_0 = MagicMock()
+        mock_ol_0.Comp_apfu = [0.0, 1.0, 1.0]   # Mg=0, Fe2+=1 after split
+
+        mock_ol_1 = MagicMock()
+        mock_ol_1.Comp_apfu = [1.0, 0.0, 1.0]   # Mg=1, Fe2+=0 after split
+
+        mock_out.SS_vec = [mock_ol_0, mock_ol_1]
+
+        vals = get_phase_mg2_number(mock_out, 'ol', instance='all')
+        self.assertEqual(vals.shape, (2,))
+        self.assertAlmostEqual(vals[0], 0.0)
+        self.assertAlmostEqual(vals[1], 1.0)
+
 if __name__ == '__main__':
     unittest.main()
