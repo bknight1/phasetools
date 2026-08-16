@@ -62,7 +62,7 @@ class MagmaOcean(MAGEMinBase):
         return (self.rho_avg * self.g * depth_km * 1000.0) / 1e8
 
     def radius_to_pressure(self, R_km: float) -> float:
-        """Convert radius from center (km) to pressure (kbar)."""
+        """Convert radius from centre (km) to pressure (kbar)."""
         depth = self.radius_body - R_km
         return self.depth_to_pressure(depth)
 
@@ -95,7 +95,10 @@ class MagmaOcean(MAGEMinBase):
                 f"find_temperature_at_vol_frac: bisection failed for P={P}, "
                 f"target_vol_frac={target_vol_frac}; returning bracket endpoint T={endpoint}."
             )
-            return float(endpoint)
+            raise RuntimeError(
+                f"find_temperature_at_vol_frac: bisection failed for P={P}, "
+                f"target_vol_frac={target_vol_frac}. Bracket T range: {bracket}"
+            )
 
     def get_phase_chemistry_at_index(self, out, i: int) -> np.ndarray:
         """Extract the chemical composition vector of a phase at a specific index."""
