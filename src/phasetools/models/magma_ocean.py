@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+import warnings
 from scipy import optimize
 from typing import List, Dict, Any, Tuple, Optional
 from ..core.base import MAGEMinBase
@@ -61,7 +62,7 @@ class MagmaOcean(MAGEMinBase):
         return (self.rho_avg * self.g * depth_km * 1000.0) / 1e8
 
     def radius_to_pressure(self, R_km: float) -> float:
-        """Convert radius from center (km) to pressure (kbar)."""
+        """Convert radius from centre (km) to pressure (kbar)."""
         depth = self.radius_body - R_km
         return self.depth_to_pressure(depth)
 
@@ -89,7 +90,15 @@ class MagmaOcean(MAGEMinBase):
         except ValueError:
             f_low = func(bracket[0])
             f_high = func(bracket[1])
-            return float(bracket[0] if abs(f_low) < abs(f_high) else bracket[1])
+            endpoint = bracket[0] if abs(f_low) < abs(f_high) else bracket[1]
+            warnings.warn(
+                f"find_temperature_at_vol_frac: bisection failed for P={P}, "
+                f"target_vol_frac={target_vol_frac}; returning bracket endpoint T={endpoint}."
+            )
+            raise RuntimeError(
+                f"find_temperature_at_vol_frac: bisection failed for P={P}, "
+                f"target_vol_frac={target_vol_frac}. Bracket T range: {bracket}"
+            )
 
     def get_phase_chemistry_at_index(self, out, i: int) -> np.ndarray:
         """Extract the chemical composition vector of a phase at a specific index."""
@@ -121,6 +130,7 @@ class MagmaOcean(MAGEMinBase):
         }
         
         melt_sum = np.zeros(len(self._Xoxides_py))
+        n_melt_samples = 0
         layer_modes_sum = {}
         
         for P in pressures:
@@ -145,15 +155,19 @@ class MagmaOcean(MAGEMinBase):
                 if ph_str == 'liq':
                     melt_comp = self.get_phase_chemistry_at_index(out, i)
                     melt_sum += melt_comp
+                    n_melt_samples += 1
                 else:
                     layer_modes_sum[ph_str] = layer_modes_sum.get(ph_str, 0.0) + vfrac
             
             results["modes"].append(modes)
             results["densities"].append(densities)
             
-        avg_melt = melt_sum / p_intervals
+        avg_melt = melt_sum / max(n_melt_samples, 1)
         total_solid = sum(layer_modes_sum.values())
-        results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
+        if total_solid > 0:
+            results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
+        else:
+            results["layer_modes"] = {}
         
         return results, avg_melt
 
@@ -191,6 +205,12 @@ class MagmaOcean(MAGEMinBase):
         """
         all_stage_results = []
         current_melt_comp = starting_melt
+
+        if len(starting_melt) != len(self._Xoxides_py):
+            raise ValueError(
+                f"starting_melt length ({len(starting_melt)}) does not match "
+                f"bulk composition oxides ({len(self._Xoxides_py)})."
+            )
         
         # Calculate volume of total LMO based on the initial melt ocean bounds
         v_total_mo_init = self.get_volume_between_radii(self.pressure_to_radius(p_start), self.pressure_to_radius(p_end))
@@ -205,76 +225,80 @@ class MagmaOcean(MAGEMinBase):
         r_top = self.pressure_to_radius(p_end)
         
         current_liquid_vol_frac = starting_vol_frac
-        
-        for stage in range(1, n_stages + 1):
-            # Set composition
-            self.X = jlconvert(jl.Vector[jl.Float64], current_melt_comp)
-            
-            # Base pressure of the current liquid ocean
-            p_base = self.radius_to_pressure(r_bottom)
-            
-            # Per Johnson et al. 2021: Stage 1 concludes when 5 vol% solid is reached 
-            # for the WHOLE melt ocean. Target solid frac = vol_step / current_liquid_vol_frac.
-            # Clamp to 1.0 to prevent minimization failure in the final stage.
-            target_solid_frac = min(vol_step / current_liquid_vol_frac, 1.0)
-            
-            # Find temperature at base pressure for target solid fraction
-            T = self.find_temperature_at_vol_frac(p_base, target_solid_frac)
-            
-            # Run minimization at the base pressure
-            out = MAGEMin_C.single_point_minimization(p_base, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
-            
-            stage_results = {
-                "stage": stage,
-                "p_base": p_base,
-                "p_top": self.radius_to_pressure(r_top),
-                "T": T,
-                "modes": {},
-                "densities": {},
-                "layer_modes": {}
-            }
-            
-            layer_modes_sum = {}
-            for i, ph_name in enumerate(out.ph):
-                ph_str = str(ph_name)
-                vfrac = float(out.ph_frac_vol[i])
-                stage_results["modes"][ph_str] = vfrac
+
+        saved_X = self.X
+        try:
+            for stage in range(1, n_stages + 1):
+                # Set composition
+                self.X = jlconvert(jl.Vector[jl.Float64], current_melt_comp)
                 
-                if i < out.n_SS:
-                    rho = float(out.SS_vec[i].rho)
-                else:
-                    rho = float(out.PP_vec[i - out.n_SS].rho)
-                stage_results["densities"][ph_str] = rho
+                # Base pressure of the current liquid ocean
+                p_base = self.radius_to_pressure(r_bottom)
                 
-                if ph_str == 'liq':
-                    current_melt_comp = self.get_phase_chemistry_at_index(out, i)
+                # Per Johnson et al. 2021: Stage 1 concludes when 5 vol% solid is reached 
+                # for the WHOLE melt ocean. Target solid frac = vol_step / current_liquid_vol_frac.
+                # Clamp to 1.0 to prevent minimization failure in the final stage.
+                target_solid_frac = min(vol_step / current_liquid_vol_frac, 1.0)
+                
+                # Find temperature at base pressure for target solid fraction
+                T = self.find_temperature_at_vol_frac(p_base, target_solid_frac)
+                
+                # Run minimization at the base pressure
+                out = MAGEMin_C.single_point_minimization(p_base, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
+                
+                stage_results = {
+                    "stage": stage,
+                    "p_base": p_base,
+                    "p_top": self.radius_to_pressure(r_top),
+                    "T": T,
+                    "modes": {},
+                    "densities": {},
+                    "layer_modes": {}
+                }
+                
+                layer_modes_sum = {}
+                for i, ph_name in enumerate(out.ph):
+                    ph_str = str(ph_name)
+                    vfrac = float(out.ph_frac_vol[i])
+                    stage_results["modes"][ph_str] = vfrac
+                    
+                    if i < out.n_SS:
+                        rho = float(out.SS_vec[i].rho)
+                    else:
+                        rho = float(out.PP_vec[i - out.n_SS].rho)
+                    stage_results["densities"][ph_str] = rho
+                    
+                    if ph_str == 'liq':
+                        current_melt_comp = self.get_phase_chemistry_at_index(out, i)
+                    else:
+                        layer_modes_sum[ph_str] = layer_modes_sum.get(ph_str, 0.0) + vfrac
+                
+                # Normalise solid modes for the layer
+                total_solid = sum(layer_modes_sum.values())
+                if total_solid > 0:
+                    stage_results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
                 else:
-                    layer_modes_sum[ph_str] = layer_modes_sum.get(ph_str, 0.0) + vfrac
-            
-            # Normalise solid modes for the layer
-            total_solid = sum(layer_modes_sum.values())
-            if total_solid > 0:
-                stage_results["layer_modes"] = {ph: val / total_solid for ph, val in layer_modes_sum.items()}
-            else:
-                stage_results["layer_modes"] = {}
-            
-            # Update Geometry: Sinking minerals raise the bottom radius, floating ones lower the top radius.
-            pl_frac = sum(stage_results["layer_modes"].get(ph, 0.0) for ph in float_phases)
-            v_float = v_step * pl_frac
-            v_sink = v_step * (1.0 - pl_frac)
-            
-            # Ensure we don't exceed the available ocean volume (safety bound)
-            v_ocean = self.get_volume_between_radii(r_bottom, r_top)
-            v_float = min(v_float, v_ocean)
-            v_sink = min(v_sink, v_ocean - v_float)
-            
-            r_bottom = np.power(r_bottom**3 + (3 * v_sink) / (4 * np.pi), 1/3)
-            # Ensure r_top doesn't go below r_bottom
-            r_top = np.power(max(r_top**3 - (3 * v_float) / (4 * np.pi), r_bottom**3), 1/3)
-            
-            current_liquid_vol_frac -= vol_step
-            all_stage_results.append(stage_results)
-            
-            if current_liquid_vol_frac <= 0: break
-            
+                    stage_results["layer_modes"] = {}
+                
+                # Update Geometry: Sinking minerals raise the bottom radius, floating ones lower the top radius.
+                pl_frac = sum(stage_results["layer_modes"].get(ph, 0.0) for ph in float_phases)
+                v_float = v_step * pl_frac
+                v_sink = v_step * (1.0 - pl_frac)
+                
+                # Ensure we don't exceed the available ocean volume (safety bound)
+                v_ocean = self.get_volume_between_radii(r_bottom, r_top)
+                v_float = min(v_float, v_ocean)
+                v_sink = min(v_sink, v_ocean - v_float)
+                
+                r_bottom = np.power(r_bottom**3 + (3 * v_sink) / (4 * np.pi), 1/3)
+                # Ensure r_top doesn't go below r_bottom
+                r_top = np.power(max(r_top**3 - (3 * v_float) / (4 * np.pi), r_bottom**3), 1/3)
+                
+                current_liquid_vol_frac -= vol_step
+                all_stage_results.append(stage_results)
+                
+                if current_liquid_vol_frac <= 0: break
+        finally:
+            self.X = saved_X
+                    
         return all_stage_results

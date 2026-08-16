@@ -33,8 +33,8 @@ class TestRedoxLogic(unittest.TestCase):
         # excess_o = 12.023 - 12.0 = 0.023
         # fe3 = 2 * 0.023 = 0.046
         # fe2 = 1.715 - 0.046 = 1.669
-        self.assertAlmostEqual(result['fe3'], 0.046, places=3)
-        self.assertAlmostEqual(result['fe2'], 1.669, places=3)
+        self.assertAlmostEqual(result['Fe3'], 0.046, places=3)
+        self.assertAlmostEqual(result['Fe2'], 1.669, places=3)
 
     @patch('phasetools.core.phase_properties.get_oxide_apfu')
     def test_pyroxene_redox_split(self, mock_get_apfu):
@@ -52,8 +52,8 @@ class TestRedoxLogic(unittest.TestCase):
         # excess_o = 6.05 - 6.0 = 0.05
         # fe3 = 0.1
         # fe2 = 0.9
-        self.assertAlmostEqual(result['fe3'], 0.1, places=2)
-        self.assertAlmostEqual(result['fe2'], 0.9, places=2)
+        self.assertAlmostEqual(result['Fe3'], 0.1, places=2)
+        self.assertAlmostEqual(result['Fe2'], 0.9, places=2)
 
     @patch('phasetools.core.phase_properties.get_oxide_apfu')
     def test_spinel_standard_split(self, mock_get_apfu):
@@ -71,8 +71,8 @@ class TestRedoxLogic(unittest.TestCase):
         # total_fe = 0.8 + 2*0.1 = 1.0
         # fe3 = 2 * 0.1 = 0.2
         # fe2 = 0.8
-        self.assertAlmostEqual(result['fe3'], 0.2, places=2)
-        self.assertAlmostEqual(result['fe2'], 0.8, places=2)
+        self.assertAlmostEqual(result['Fe3'], 0.2, places=2)
+        self.assertAlmostEqual(result['Fe2'], 0.8, places=2)
 
     @patch('phasetools.core.phase_properties.get_oxide_apfu')
     def test_negative_clamp(self, mock_get_apfu):
@@ -86,8 +86,8 @@ class TestRedoxLogic(unittest.TestCase):
         
         result = self.base._extract_fe_split_from_apfu(None, 'dio')
         
-        self.assertEqual(result['fe2'], 0.0)
-        self.assertAlmostEqual(result['fe3'], 0.1, places=2)
+        self.assertEqual(result['Fe2'], 0.0)
+        self.assertAlmostEqual(result['Fe3'], 0.1, places=2)
 
     @patch('phasetools.core.phase_properties.get_oxide_apfu')
     def test_sb24_iron_handling(self, mock_get_apfu):
@@ -104,8 +104,61 @@ class TestRedoxLogic(unittest.TestCase):
         
         # total_fe should be 1.0 (from 'Fe')
         # fe3 should be 0.1 (from 2 * 0.05)
-        self.assertAlmostEqual(result['fe2'], 0.9, places=2)
-        self.assertAlmostEqual(result['fe3'], 0.1, places=2)
+        self.assertAlmostEqual(result['Fe2'], 0.9, places=2)
+        self.assertAlmostEqual(result['Fe3'], 0.1, places=2)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_bankers_rounding_half_integer(self, mock_get_apfu):
+        """O APFU at x.5 boundary — banker's rounding gives correct result."""
+        mock_get_apfu.return_value = {'FeO': 1.0, 'O': 12.5, 'Fe2O3': 0.0}
+        result = self.base._extract_fe_split_from_apfu(None, 'g')
+        # int(12.5) = 12, excess_o = 0.5, fe3 = 1.0
+        self.assertAlmostEqual(result['Fe3'], 1.0, places=4)
+        self.assertAlmostEqual(result['Fe2'], 0.0, places=4)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_bankers_rounding_above_half(self, mock_get_apfu):
+        """O APFU above x.5 — int() truncates, giving correct excess."""
+        mock_get_apfu.return_value = {'FeO': 1.0, 'O': 13.5, 'Fe2O3': 0.0}
+        result = self.base._extract_fe_split_from_apfu(None, 'g')
+        # int(13.5) = 13, excess_o = 0.5, fe3 = 1.0
+        self.assertAlmostEqual(result['Fe3'], 1.0, places=4)
+        self.assertAlmostEqual(result['Fe2'], 0.0, places=4)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_mixed_fe2o3_and_o_basis(self, mock_get_apfu):
+        """Both Fe2O3 and O present — no double-counting."""
+        mock_get_apfu.return_value = {'FeO': 0.5, 'O': 6.1, 'Fe2O3': 0.1}
+        result = self.base._extract_fe_split_from_apfu(None, 'dio')
+        # excess_o = 0.1, fe3 = 2*0.1 + 2*0.1 = 0.4, total_fe = 0.5, fe2 = 0.1
+        self.assertAlmostEqual(result['Fe3'], 0.4, places=4)
+        self.assertAlmostEqual(result['Fe2'], 0.1, places=4)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_no_iron_phase(self, mock_get_apfu):
+        """Phase with no iron — returns zero split."""
+        mock_get_apfu.return_value = {'FeO': 0.0, 'O': 12.0, 'Fe2O3': 0.0}
+        result = self.base._extract_fe_split_from_apfu(None, 'q')
+        self.assertEqual(result['Fe2'], 0.0)
+        self.assertEqual(result['Fe3'], 0.0)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_fe3_exceeds_total_fe_clamp(self, mock_get_apfu):
+        """excess_o suggests more Fe3+ than total Fe — Fe2+ clamped to 0."""
+        mock_get_apfu.return_value = {'FeO': 0.1, 'O': 6.3, 'Fe2O3': 0.0}
+        result = self.base._extract_fe_split_from_apfu(None, 'dio')
+        # excess_o = 0.3, fe3 = 0.6, total_fe = 0.1, fe2 = max(0.1-0.6, 0) = 0
+        self.assertAlmostEqual(result['Fe3'], 0.6, places=4)
+        self.assertEqual(result['Fe2'], 0.0)
+
+    @patch('phasetools.core.phase_properties.get_oxide_apfu')
+    def test_zero_o_basis(self, mock_get_apfu):
+        """Traditional FeO/Fe2O3 basis when O = 0."""
+        mock_get_apfu.return_value = {'FeO': 0.8, 'O': 0.0, 'Fe2O3': 0.1}
+        result = self.base._extract_fe_split_from_apfu(None, 'sp')
+        # total_fe = 0.8 + 2*0.1 = 1.0, fe3 = 2*0.1 = 0.2, fe2 = 0.8
+        self.assertAlmostEqual(result['Fe3'], 0.2, places=4)
+        self.assertAlmostEqual(result['Fe2'], 0.8, places=4)
 
     def test_get_phase_mg_number_robustness(self):
         """Test that get_phase_mg_number handles Fe and Fe2O3 components."""
@@ -168,6 +221,28 @@ class TestRedoxLogic(unittest.TestCase):
         # Kd = (Fe/Mg)_g / (Fe/Mg)_cpx = 0.5 / 0.25 = 2.0
         kd = calculate_kd_fe_mg(mock_out, 'g', 'cpx')
         self.assertAlmostEqual(kd, 2.0, places=1)
+
+    def test_get_phase_mg2_number_element_wise(self):
+        """instance='all' must compute Mg# element-wise, not collapse on one zero denominator."""
+        from phasetools.core.phase_properties import get_phase_mg2_number
+
+        # Two instances of 'ol': one Mg-free, one Fe-free.
+        mock_out = MagicMock()
+        mock_out.ph = ['ol', 'ol']
+        mock_out.oxides = ['MgO', 'FeO', 'O']
+
+        mock_ol_0 = MagicMock()
+        mock_ol_0.Comp_apfu = [0.0, 1.0, 1.0]   # Mg=0, Fe2+=1 after split
+
+        mock_ol_1 = MagicMock()
+        mock_ol_1.Comp_apfu = [1.0, 0.0, 1.0]   # Mg=1, Fe2+=0 after split
+
+        mock_out.SS_vec = [mock_ol_0, mock_ol_1]
+
+        vals = get_phase_mg2_number(mock_out, 'ol', instance='all')
+        self.assertEqual(vals.shape, (2,))
+        self.assertAlmostEqual(vals[0], 0.0)
+        self.assertAlmostEqual(vals[1], 1.0)
 
 if __name__ == '__main__':
     unittest.main()
