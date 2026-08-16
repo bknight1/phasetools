@@ -2,7 +2,7 @@ import numpy as np
 import warnings
 
 
-def _phase_indices(out, phase, instance=0):
+def _phase_indices(out: object, phase: str, instance: int | str = 0) -> list[int]:
     """Return the index/indices of ``phase`` in ``out.ph``.
 
     Parameters
@@ -246,12 +246,12 @@ def get_phase_fe_split(out, ph, instance=0):
         return {"Fe2": 0.0, "Fe3": 0.0} if instance != 'all' else empty
 
     # 1. Calculate Total Fe atoms (Atoms per formula unit)
-    if np.any(ato > 0):
-        # MAGEMin O-basis (ig, mp) or sb24 basis
-        total_fe = fem if np.any(fem > 0) else feo
-    else:
-        # Traditional FeO/Fe2O3 basis
-        total_fe = feo + 2.0 * fe2o3
+    # Use np.where so each instance follows its own basis (O-bearing vs traditional).
+    total_fe = np.where(
+        ato > 0,
+        np.where(fem > 0, fem, feo),
+        feo + 2.0 * fe2o3
+    )
 
     # 2. Calculate Fe3+ atoms using excess oxygen heuristic
     excess_o = np.maximum(ato - np.floor(ato), 0.0)
@@ -261,10 +261,10 @@ def get_phase_fe_split(out, ph, instance=0):
     fe2 = np.maximum(np.asarray(total_fe) - fe3, 0.0)
 
     if instance != 'all':
-        return {"Fe2": float(np.squeeze(fe2)), "Fe3": float(np.squeeze(fe3))}
+        return {"Fe2": float(fe2.item()), "Fe3": float(fe3.item())}
     return {"Fe2": fe2, "Fe3": fe3}
 
-def get_phase_mg2_number(out, ph, instance=0):
+def get_phase_mg2_number(out: object, ph: str, instance: int | str = 0) -> float | np.ndarray:
     """
     Calculate Mg# (molar Mg / (Mg + Fe2+)) for a specific phase.
     
@@ -273,16 +273,15 @@ def get_phase_mg2_number(out, ph, instance=0):
     try:
         apfu = get_oxide_apfu(out, ph, ['MgO'], instance=instance)
         mg = apfu.get('MgO', 0.0)
-        
+
         split = get_phase_fe_split(out, ph, instance=instance)
         fe2 = split['Fe2']
-        
-        denominator = mg + fe2
-        if np.any(np.asarray(denominator) <= 0):
-            return 0.0 if instance != 'all' else np.zeros(len(mg))
-            
-        return (mg / denominator) if instance != 'all' else np.asarray(mg / denominator, dtype=float)
-    except:
+
+        denominator = np.asarray(mg + fe2, dtype=float)
+        if instance != 'all':
+            return float(mg / denominator) if denominator > 0 else 0.0
+        return np.where(denominator > 0, mg / denominator, 0.0)
+    except Exception:
         return 0.0
 
 def calculate_kd_fe_mg(out, phase1, phase2, use_fe2_only=False):
