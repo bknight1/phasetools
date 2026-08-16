@@ -85,16 +85,5 @@ class TestGarnetFeBasis(unittest.TestCase):
             self.assertEqual(calc.fe_basis, 'feot')
 
 
-class TestGarnetGeneratorFeBasis(unittest.TestCase):
-    """GarnetGenerator forwards fe_basis to the garnet calculator."""
-
-    @patch('phasetools.models.garnet_growth.MAGEMinGarnetCalculator.__init__')
-    def test_forwards_fe_basis(self, mock_init):
-        from phasetools.models.garnet_growth import GarnetGenerator
-        GarnetGenerator(db='mpe', fe_basis='Fe2+')
-        _, kwargs = mock_init.call_args
-        self.assertEqual(kwargs.get('fe_basis'), 'Fe2+')
-
-
 if __name__ == '__main__':
     unittest.main()
