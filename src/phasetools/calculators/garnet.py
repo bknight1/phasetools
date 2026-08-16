@@ -9,7 +9,9 @@ from juliacall import Main as jl, convert as jlconvert
 class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
     """High-level wrappers for garnet-focused MAGEMin calculations."""
 
-    def __init__(self, db="ig", dataset=636, verbose=False, fe_basis="FeOt"):
+    def __init__(
+        self, db: str = "ig", dataset: int = 636, verbose: bool = False, fe_basis: str = "FeOt"
+    ) -> None:
         """
         Parameters
         ----------
@@ -33,6 +35,7 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
               divalent site, excluding Fe3+.  Use only when garnet Fe3+ is
               known to be significant (oxidised eclogites, skarns) or
               measured directly (XANES, Mössbauer).
+            * ``'Fe2'`` or ``'fe2'`` -- alias for ``'Fe2+'``.
 
             Case-insensitive.
         """
