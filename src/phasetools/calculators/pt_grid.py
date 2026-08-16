@@ -2,7 +2,7 @@ import numpy as np
 import sys
 from juliacall import Main as jl, convert as jlconvert
 from ..core.base import MAGEMinBase
-from ..core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number, _phase_indices
+from ..core.phase_properties import extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number, _phase_indices
 from ..utils.bulk_rock import atomic_mass_dict, atomic_frac_to_wt_frac
 from phasetools import MAGEMin_C
 
@@ -97,10 +97,13 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
                 return []
         return []
 
-    def _extract_cations_from_apfu(self, out, phase, cations, sys_in, instance=0):
-        """Internal: Extract cation ratios (e.g., XMg, XFe) for a specific phase."""
+    def _extract_cations_from_apfu(self, out, phase, cations, sys_in):
+        """Internal: per-instance cation ratios (e.g., XMg, XFe).
+
+        Returns ``cat_<c>`` arrays, one entry per instance of the phase.
+        """
         ox_to_query = ['MgO', 'MnO', 'CaO', 'FeO', 'Fe2O3', 'Fe', 'O']
-        apfu = get_oxide_apfu(out, phase, ox_to_query, instance=instance)
+        apfu = get_oxide_apfu(out, phase, ox_to_query, instance='all')
 
         mg = np.asarray(apfu.get("MgO", 0.0), dtype=float)
         mn = np.asarray(apfu.get("MnO", 0.0), dtype=float)
@@ -123,36 +126,44 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
             fe = feo + 2.0 * fe2o3
 
         total = mg + mn + fe + ca
-        if instance != 'all':
-            if total.ndim == 0 and total <= 0:
-                return {f"cat_{c}": 0.0 for c in cations}
-            total = np.maximum(total, 1e-12)
-            vals = {"Mg": mg/total, "Mn": mn/total, "Fe": fe/total, "Ca": ca/total}
-            if sys_in.casefold() == 'wt':
-                vals = atomic_frac_to_wt_frac(vals, atomic_mass_dict)
-            return {f"cat_{c}": float(vals.get(c, 0.0)) for c in cations}
-
-        n = len(total)
         total_safe = np.where(total > 0, total, np.nan)
-        vals = {"Mg": mg/total_safe, "Mn": mn/total_safe,
-                "Fe": fe/total_safe, "Ca": ca/total_safe}
+        with np.errstate(divide='ignore', invalid='ignore'):
+            vals = {"Mg": mg/total_safe, "Mn": mn/total_safe,
+                    "Fe": fe/total_safe, "Ca": ca/total_safe}
+
         if sys_in.casefold() == 'wt':
             vals = atomic_frac_to_wt_frac(vals, atomic_mass_dict)
-        return {f"cat_{c}": np.asarray(vals.get(c, 0.0), dtype=float) for c in cations}
 
-    def extract_from_grid(self, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False, grid_out=None, instance=0):
+        return {f"cat_{c}": np.asarray(vals[c], dtype=float) for c in cations}
+
+    def extract_from_grid(self, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False, grid_out=None):
         """Extract phase properties from a previously calculated grid.
 
-        Parameters
-        ----------
-        instance : int or {'all'}, default=0
-            For a phase that appears multiple times (a solvus), an integer
-            index selects that instance and ``'all'`` returns one column
-            per instance, keyed with a ``_0``, ``_1`` ... suffix (missing
-            instances at a given point are NaN).  ``mol_frac``/``wt_frac``/
-            ``vol_frac`` are always the summed totals; with ``'all'``
-            additional per-instance columns ``mol_frac_0``, ``mol_frac_1``
-            ... are emitted.
+        MAGEMin reports coexisting solvus limbs as repeated entries in
+        ``out.ph`` (e.g. two clinopyroxenes ``dio``).  Returns a list
+        with one bundle per instance, indexed ``res[0]``, ``res[1]``
+        ...:
+
+        ``res[0]`` -- first (or only) instance; every key is an array
+        over the grid points (scalars for ``single_point_calc``).
+
+        The key shape is identical for every phase -- a phase with a
+        single instance simply has a one-element list, always at
+        ``res[0]``.  Sum the per-instance ``mol_frac`` arrays yourself
+        if you want the total.
+
+        Each bundle key is NaN where the phase (or that instance) is
+        absent at a grid point.  If the phase never appears in the grid,
+        the returned list is empty.
+
+        Notes
+        -----
+        - Bundle ``res[k]`` is the k-th occurrence of the phase in that
+          point's ``out.ph``; solvus branch ordering may swap between
+          grid points, so track both limbs when plotting isopleths.
+        - ``end_members='auto'`` discovers end-members from the first
+          occurrence of the phase; solvus limbs normally share the same
+          solution model and endmember set.
         """
         out = grid_out if grid_out is not None else self.last_grid_out
         if out is None:
@@ -163,139 +174,125 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
             end_members = self.get_phase_endmembers(phase, out)
 
         P_len = len(out)
-        results = {
-            "mol_frac": np.zeros(P_len), "wt_frac": np.zeros(P_len), "vol_frac": np.zeros(P_len),
-        }
 
-        all_inst = instance == 'all'
-        if all_inst:
-            n_inst = 0
-            for o in out:
-                n_inst = max(n_inst, len(_phase_indices(o, phase, 'all')))
-            # per-instance fraction columns alongside the summed totals
+        # n_inst = max occurrences of the phase across the whole grid
+        n_inst = 0
+        for o in out:
+            n_inst = max(n_inst, len(_phase_indices(o, phase, 'all')))
+
+        instances = [{} for _ in range(n_inst)]
+
+        def _precreate(prefix, names):
             for k in range(n_inst):
-                results[f"mol_frac_{k}"] = np.zeros(P_len)
-                results[f"wt_frac_{k}"] = np.zeros(P_len)
-                results[f"vol_frac_{k}"] = np.zeros(P_len)
-        else:
-            n_inst = 1
+                for n in names:
+                    instances[k][f"{prefix}{n}"] = np.full(P_len, np.nan)
 
-        def _make_keys(prefix, names):
-            if all_inst:
-                return [f"{prefix}{n}_{k}" for n in names for k in range(n_inst)]
-            return [f"{prefix}{n}" for n in names]
-
+        for k in range(n_inst):
+            instances[k]["mol_frac"] = np.full(P_len, np.nan)
+            instances[k]["wt_frac"] = np.full(P_len, np.nan)
+            instances[k]["vol_frac"] = np.full(P_len, np.nan)
         if end_members:
-            for key in _make_keys("em_", end_members): results[key] = np.zeros(P_len)
+            _precreate("em_", end_members)
         if oxides:
-            for key in _make_keys("ox_apfu_", oxides): results[key] = np.zeros(P_len)
+            _precreate("ox_apfu_", oxides)
         if chemistry:
-            for key in _make_keys("chem_", chemistry): results[key] = np.zeros(P_len)
+            _precreate("chem_", chemistry)
         if cations:
-            for key in _make_keys("cat_", cations): results[key] = np.zeros(P_len)
+            _precreate("cat_", cations)
         if mg_number:
-            for key in _make_keys("Mg_number", [""]): results[key] = np.zeros(P_len)
+            for k in range(n_inst):
+                instances[k]["Mg_number"] = np.full(P_len, np.nan)
         if fe_split:
-            for key in _make_keys("Fe2", [""]): results[key] = np.zeros(P_len)
-            for key in _make_keys("Fe3", [""]): results[key] = np.zeros(P_len)
+            for k in range(n_inst):
+                instances[k]["Fe2"] = np.full(P_len, np.nan)
+                instances[k]["Fe3"] = np.full(P_len, np.nan)
 
         for i in range(P_len):
             if phase not in out[i].ph:
                 continue
-            results["mol_frac"][i] = phase_frac(phase, out[i], 'mol')
-            results["wt_frac"][i]  = phase_frac(phase, out[i], 'wt')
-            results["vol_frac"][i] = phase_frac(phase, out[i], 'vol')
+            n_idx = _phase_indices(out[i], phase, 'all')
+            for k, j in enumerate(n_idx):
+                instances[k]["mol_frac"][i] = float(out[i].ph_frac[j])
+                instances[k]["wt_frac"][i] = float(out[i].ph_frac_wt[j])
+                instances[k]["vol_frac"][i] = float(out[i].ph_frac_vol[j])
+            # instances k >= len(n_idx) stay NaN
 
-            if all_inst:
-                n_idx = _phase_indices(out[i], phase, 'all')
-                fm = [float(out[i].ph_frac[j]) for j in n_idx]
-                fw = [float(out[i].ph_frac_wt[j]) for j in n_idx]
-                fv = [float(out[i].ph_frac_vol[j]) for j in n_idx]
+            def _fill(key, value):
+                vals = np.atleast_1d(np.asarray(value, dtype=float))
+                n = len(vals)
                 for k in range(n_inst):
-                    results[f"mol_frac_{k}"][i] = fm[k] if k < len(fm) else np.nan
-                    results[f"wt_frac_{k}"][i] = fw[k] if k < len(fw) else np.nan
-                    results[f"vol_frac_{k}"][i] = fv[k] if k < len(fv) else np.nan
-
-            def _store(key, value):
-                if all_inst:
-                    vals = np.asarray(value, dtype=float)
-                    n = len(vals)
-                    for k in range(n_inst):
-                        results[f"{key}_{k}"][i] = vals[k] if k < n else np.nan
-                else:
-                    results[key][i] = value
+                    if k < n:
+                        instances[k][key][i] = vals[k]
+                    # else stays NaN
 
             if end_members:
                 for em in end_members:
-                    _store(f"em_{em}", extract_end_member(phase, out[i], em, self.sys_in, instance=instance))
+                    _fill(f"em_{em}", extract_end_member(phase, out[i], em, self.sys_in, instance='all'))
             if oxides:
-                apfu = get_oxide_apfu(out[i], phase, oxides, instance=instance)
-                for ox in oxides: _store(f"ox_apfu_{ox}", apfu.get(ox, 0.0))
+                apfu = get_oxide_apfu(out[i], phase, oxides, instance='all')
+                for ox in oxides: _fill(f"ox_apfu_{ox}", apfu.get(ox, np.zeros(0)))
             if chemistry:
-                chem = get_phase_chemistry(out[i], phase, chemistry, self.sys_in, instance=instance)
-                for ox in chemistry: _store(f"chem_{ox}", chem.get(ox, 0.0))
+                chem = get_phase_chemistry(out[i], phase, chemistry, self.sys_in, instance='all')
+                for ox in chemistry: _fill(f"chem_{ox}", chem.get(ox, np.zeros(0)))
             if cations:
-                cat_vals = self._extract_cations_from_apfu(out[i], phase, cations, self.sys_in, instance=instance)
-                for c in cations: _store(f"cat_{c}", cat_vals[f"cat_{c}"])
+                cat_vals = self._extract_cations_from_apfu(out[i], phase, cations, self.sys_in)
+                for c in cations: _fill(f"cat_{c}", cat_vals[f"cat_{c}"])
             if mg_number:
-                _store("Mg_number", get_phase_mg_number(out[i], phase, instance=instance))
+                _fill("Mg_number", get_phase_mg_number(out[i], phase, instance='all'))
             if fe_split:
-                split = self._extract_fe_split_from_apfu(out[i], phase, instance=instance)
-                _store("Fe2", split["Fe2"])
-                _store("Fe3", split["Fe3"])
+                split = self._extract_fe_split_from_apfu(out[i], phase, instance='all')
+                _fill("Fe2", split["Fe2"])
+                _fill("Fe3", split["Fe3"])
 
-        return results
+        return instances
 
-    def generate_2D_grid(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False, instance=0):
+    def generate_2D_grid(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False):
         """Convenience wrapper."""
         self.calculate_grid(P, T)
-        return self.extract_from_grid(phase, end_members, oxides, chemistry, cations, mg_number, fe_split, instance=instance)
+        return self.extract_from_grid(phase, end_members, oxides, chemistry, cations, mg_number, fe_split)
 
-    def single_point_calc(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False, instance=0):
-        """Single-point calculation."""
+    def single_point_calc(self, P, T, phase, end_members=None, oxides=None, chemistry=None, cations=None, mg_number=False, fe_split=False):
+        """Single-point calculation.
+
+        Returns ``(bundles, out)`` where ``bundles`` is a list with one
+        bundle per instance of the phase (``bundles[0]``, ``bundles[1]``,
+        ...), keyed like the grid-level ``extract_from_grid`` with scalar
+        values.  The list is empty when the phase is not present at this
+        P-T.
+        """
         out = MAGEMin_C.single_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
         sys.stdout.flush()
-        results = {"mol_frac": 0.0, "wt_frac": 0.0, "vol_frac": 0.0, "present": False}
+        instances = []
 
         if phase in out.ph:
-            results["present"] = True
-            results["mol_frac"] = phase_frac(phase, out, 'mol')
-            results["wt_frac"]  = phase_frac(phase, out, 'wt')
-            results["vol_frac"] = phase_frac(phase, out, 'vol')
-
-            all_inst = instance == 'all'
-            n_inst = len(_phase_indices(out, phase, 'all')) if all_inst else 1
-
-            if all_inst:
-                for k, j in enumerate(_phase_indices(out, phase, 'all')):
-                    results[f"mol_frac_{k}"] = float(out.ph_frac[j])
-                    results[f"wt_frac_{k}"] = float(out.ph_frac_wt[j])
-                    results[f"vol_frac_{k}"] = float(out.ph_frac_vol[j])
+            n_idx = _phase_indices(out, phase, 'all')
+            instances = [{"mol_frac": 0.0, "wt_frac": 0.0, "vol_frac": 0.0}
+                         for _ in n_idx]
+            for k, j in enumerate(n_idx):
+                instances[k]["mol_frac"] = float(out.ph_frac[j])
+                instances[k]["wt_frac"] = float(out.ph_frac_wt[j])
+                instances[k]["vol_frac"] = float(out.ph_frac_vol[j])
 
             def _store(key, value):
-                if all_inst:
-                    vals = np.asarray(value, dtype=float)
-                    n = len(vals)
-                    for k in range(n_inst):
-                        results[f"{key}_{k}"] = vals[k] if k < n else np.nan
-                else:
-                    results[key] = value
+                vals = np.atleast_1d(np.asarray(value, dtype=float))
+                for k in range(len(vals)):
+                    instances[k][key] = vals[k]
 
             if end_members:
                 for em in end_members:
-                    _store(f"em_{em}", extract_end_member(phase, out, em, self.sys_in, instance=instance))
+                    _store(f"em_{em}", extract_end_member(phase, out, em, self.sys_in, instance='all'))
             if oxides:
-                apfu = get_oxide_apfu(out, phase, oxides, instance=instance)
-                for ox in oxides: _store(f"ox_apfu_{ox}", apfu.get(ox, 0.0))
+                apfu = get_oxide_apfu(out, phase, oxides, instance='all')
+                for ox in oxides: _store(f"ox_apfu_{ox}", apfu.get(ox, np.zeros(0)))
             if chemistry:
-                chem = get_phase_chemistry(out, phase, chemistry, self.sys_in, instance=instance)
-                for ox in chemistry: _store(f"chem_{ox}", chem.get(ox, 0.0))
+                chem = get_phase_chemistry(out, phase, chemistry, self.sys_in, instance='all')
+                for ox in chemistry: _store(f"chem_{ox}", chem.get(ox, np.zeros(0)))
             if cations:
-                cat_vals = self._extract_cations_from_apfu(out, phase, cations, self.sys_in, instance=instance)
+                cat_vals = self._extract_cations_from_apfu(out, phase, cations, self.sys_in)
                 for c in cations: _store(f"cat_{c}", cat_vals[f"cat_{c}"])
             if fe_split:
-                split = self._extract_fe_split_from_apfu(out, phase, instance=instance)
+                split = self._extract_fe_split_from_apfu(out, phase, instance='all')
                 _store("Fe2", split["Fe2"])
                 _store("Fe3", split["Fe3"])
-        
-        return results, out
+
+        return instances, out
