@@ -530,8 +530,8 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         axs[0, 0].set_title('Garnet size')
         axs[0, 0].set_xlabel('r')
         axs[0, 0].set_ylabel('f')
-        axs[0, 0].set_xlim([r_r.min(), r_r.max()])
-        axs[0, 0].plot(r_r, finp, '-', label='Size Distribution')
+        axs[0, 0].set_xlim([r.min(), r.max()])
+        axs[0, 0].plot(r, finp, '-', label='Size Distribution')
         for i in range(n_classes):
             axs[0, 0].plot([r_r[i], r_r[i]], [0, finp[i]], '-')
         axs[0, 0].legend()
