@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.stats import norm
 from typing import Any
+from juliacall import Main as jl, convert as jlconvert
 from ..calculators.garnet import MAGEMinGarnetCalculator
 
 def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
@@ -42,8 +43,8 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
     Generate synthetic garnet populations with compositional zoning along P-T-t paths.
     """
     
-    def __init__(self, db="mpe", dataset=636, verbose=False):
-        super().__init__(db, dataset, verbose)
+    def __init__(self, db="mpe", dataset=636, verbose=False, fe_basis="FeOt"):
+        super().__init__(db, dataset, verbose, fe_basis=fe_basis)
 
     def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
         super().setup_bulk_composition(Xoxides, X, sys_in, rm_list)
@@ -79,6 +80,16 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         normalise_start : bool, default=True
             If True, the initial garnet volume is set to 0 and only new growth is modeled.
             If False, the initial thermodynamic volume is used as the starting point.
+
+        Notes
+        -----
+        When both ``fractionate=True`` and ``normalise_start=False``, the
+        initial garnet fraction is removed from the reactive bulk at the first
+        P-T point (overstepped nucleation).  Subsequent growth increments are
+        then fractionated from the depleted bulk.  When
+        ``normalise_start=True``, only new growth beyond the initial fraction
+        is modelled and fractionated; the initial garnet is treated as a
+        non-reactive seed.
         """
         
 
@@ -288,13 +299,26 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
     def get_retrograde_concentrations(self, new_t=None):
         """Get the retrograde concentrations of garnet-forming elements.
 
-        Parameters:
-            new_t (array-like, optional): New time values to interpolate the data
-                and return the concentrations at these times. If None, the original
-                data is returned. Uses a linear interpolation between datapoints.
-            
-        Returns:
-            Concentrations (array): An array with the element concentrations and PTt data at each retrograde step.
+        Parameters
+        ----------
+        new_t : array-like, optional
+            New time values to interpolate the data and return the
+            concentrations at these times.  If ``None``, the original data is
+            returned.  Uses linear interpolation between datapoints.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array with element concentrations and PTt data at each retrograde
+            step.  Rows are ``[t, T, P, Mn, Mg, Fe, Ca]``.
+
+        Notes
+        -----
+        Retrograde concentrations are recalculated using the bulk composition
+        at the **last growth** step, not the bulk at the end of the P-T path.
+        This means garnet resorption during retrograde is **not** accounted
+        for — the retrograde calculation assumes a fixed bulk equal to the
+        last-growth composition.
         """
 
         GVi = np.array(self.gt_vol_frac)
@@ -334,9 +358,10 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             Ca_eval = np.zeros_like(t_eval, dtype=float)
 
             for i in range(len(t_eval)):
+                x_jl = jlconvert(jl.Vector[jl.Float64], x_last_growth)
                 (_gt_frac, _gt_wt, _gt_vol,
-                 Mg_i, Mn_i, Fe_i, Ca_i, _out) = self.gt_single_point_calc_elements(
-                    P_eval[i], T_eval[i], self.data, x_last_growth, self.Xoxides, self.sys_in, self.rm_list
+                 Mg_i, Mn_i, Fe_i, Ca_i, _out) = self._gt_single_point_from_jl(
+                    P_eval[i], T_eval[i], x_jl, self.Xoxides, self.sys_in, self.rm_list
                 )
                 Mn_eval[i] = Mn_i
                 Mg_eval[i] = Mg_i
