@@ -20,7 +20,8 @@ src/phasetools/
     engine.py        — single_point_minimization_with_conversion (Python→Julia bridge)
     phase_properties.py  — phase_frac, extract_end_member, get_oxide_apfu,
                            get_phase_chemistry, get_phase_mg_number,
-                           get_phase_fe_split, calculate_kd_fe_mg
+                           get_phase_mg2_number, get_phase_fe_split,
+                           calculate_kd_fe_mg
   calculators/
     pt_grid.py       — MAGEMinPTGridCalculator (multi-point P-T grids)
     garnet.py        — MAGEMinGarnetCalculator (garnet-focused wrappers)
@@ -200,6 +201,8 @@ Since endmembers are just oxide arrays in the database, APFU already encodes the
 
 ### Extraction methods from `extract_from_grid`
 
+**Note:** `extract_from_grid` now returns a list of per-instance bundles (one per coexisting solvus limb). Each bundle `res[k]` contains the following keys. For phases that appear only once, `res[0]` is the only element. The `instance=` parameter from the intermediate API has been dropped — the list-of-bundles shape supersedes it.
+
 | Key pattern | Source | Units | What it returns |
 |-------------|--------|-------|----------------|
 | `ox_apfu_{oxide}` | `oxides=[...]` → `get_oxide_apfu()` | Atoms per formula unit | Structural formula on a per-formula-unit basis (normalised to the phase's oxygen count, e.g. 6 O for cpx) |
@@ -276,7 +279,7 @@ The `ox.count("O")` bug undercounts oxygen, inflating the6-O scale factor by ~60
 
 - **unittest**, mock-based (`unittest.mock.patch`), **no live Julia runtime** needed.
 - Run: `python3 -m unittest discover tests`
-- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_lmo_fix.py`.
+- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`.
 - New public functions must be documented in the **directory's README.md** (e.g., `calculators/README.md`, `core/README.md`) **and** the package structure above must be updated.
 
 ## Requirements (from `setup.py`)
