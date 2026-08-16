@@ -1,0 +1,288 @@
+GNU LESSER GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+Everyone is permitted to copy and distribute verbatim copies
+of this license document, but changing it is not allowed.
+
+This version of the GNU Lesser General Public License incorporates
+the terms and conditions of version 3 of the GNU General Public
+License, supplemented by the additional permissions listed below.
+
+0. Additional Definitions.
+
+As used throughout this license, "the program" refers to any
+work or library (whether free or proprietary) which is subject to the
+terms of this license.  "Library" refers to the program in the form
+in which it is published for use, whether that is the "source code"
+form or a compiled version.  The "corresponding Library" for a work
+in source code form is the work plus any algorithmic modifications,
+and any of the following that are necessary to compile the work into
+a form that may be used to accomplish the work, and that are not
+part of the work.
+
+"Source code" for a work means the preferred form of the work for
+making modifications to it.  For a library, complete source code
+means all the source code for all modules it contains, plus any
+associated interface definition files, plus the scripts used to
+control compilation and installation of the library.
+
+Activities other than copying, distribution and modification are not
+covered by this License; they are outside its scope.  The act of
+running a program is not restricted, and the output from the program
+is covered only if its contents constitute a work based on the
+Library (independent of the use of the Library in a tool for
+writing it).  Whether that is true depends on what the program does.
+
+1. We convey to you the right to use the Library.
+
+The Library may be used to produce works that are not covered by this
+License, provided the work itself does not impose licensing terms
+more restrictive than those in this License.
+
+2. Conveying under any other circumstances.
+
+You may convey verbatim copies of the Library's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices that refer to this License and to the
+absence of any warranty; and distribute a copy of this License along
+with the Library.
+
+You may charge a fee for the physical act of transferring a copy,
+and you may at your option offer warranty protection in exchange for
+a fee.
+
+3. Combining the Library with other works.
+
+You may combine the Library with other works not to be combined
+under this License, provided that you satisfy all the conditions of
+Section 3 for the other works, and convey the combined work in
+accordance with the terms of this License.
+
+Merging two libraries into a single combined library does not make
+the combined library a derivative of either library.  If the combined
+library is a derivative of the Library, you may convey the combined
+library under the terms of this License, provided you comply with
+all the terms of this License for each of the libraries.
+
+If the combined library is merely a combination of two or more
+libraries that are not themselves Library works, and that are not
+combined in such a way that the resulting work is a derivative of
+either library, you may convey the combined library as provided you
+comply with all the terms of this License for each of the libraries
+involved.
+
+4. Object Code Incorporating Material from Library Header Files.
+
+You may convey object code in cases where:
+
+a) The object code incorporates copies of material from Library
+   header files as provided in the source code; and
+
+b) The object code is accompanied by a written offer, valid for at
+   least three years, to give the same user the materials specified
+   in Subsection 4a, for a charge no more than the cost of performing
+   this conveyance; and
+
+c) The user received a copy of the object code with the Library,
+   as explained in Subsection 4b.
+
+5. Combined Libraries.
+
+You may place library facilities that are works based on the Library
+side by side in a single library together with other library
+facilities that are not Applications and are not covered by this
+License, and convey such a combined library under the terms of your
+choice, provided you comply with the terms of this License for each
+of the libraries.
+
+6. Variants of the Library.
+
+You may convey a modified version of the Library, provided that you
+comply with the terms of this License for the portions of the
+Library that you modify, and that all other parties receive copies
+of the combined work.
+
+7. Incorporating the Library into application programs.
+
+You may incorporate the Library into an Application, provided that
+you follow the terms and conditions of this License for the Library.
+If the Application is a derivative of the Library, you must convey
+the corresponding source of the Library as described in Section 4.
+
+8. Inability to comply with certain license terms.
+
+If it is impossible for you to comply with any of the terms of this
+License with respect to some or all of the Library due to statute,
+judicial order, or regulation then you must not convey the Library
+at all.
+
+9. The GNU LGPL Is Not a Contract.
+
+You are not required to accept this License in order to receive or
+run a copy of the Library.  Ancillary propagation of the Library
+consequent on receiving a copy likewise does not require acceptance.
+However, nothing other than this License grants you permission to
+propagate or convey any derivative works.  These actions are
+prohibited by law if you do not accept this License.  Therefore, by
+propagating or conveying the Library (or any work based on the
+Library), you indicate your acceptance of this License to do so, and
+all its terms and conditions for copying, propagating or conveying
+the Library or works based on it.
+
+10. Geographic Limitations.
+
+If the distribution and/or use of the Library is restricted in
+certain countries either by patents or by copyrighted interfaces, the
+original copyright holder who places the Library under this License
+may add an explicit geographical restriction covering those
+countries, excluding those countries from the scope of this License.
+In such case, this License incorporates the restriction as if
+written in the body of this License.
+
+11. If you institute patent litigation against any entity (including
+a cross-claim or counterclaim in a lawsuit) alleging that the Library
+or a work incorporated within the Library constitutes direct or
+contributory patent infringement, then any patent licenses granted to
+you under this License for that Library shall terminate as of the
+date such litigation is filed.
+
+12. If any portion of this License is found to be invalid under any
+applicable law, such invalidity shall not affect the remaining
+portions of this License, and the alternative action for each invalid
+portion is to supplement this License with a valid provision that
+achieves, to the extent possible, the original intent of this
+License.
+
+13. Termination for patent infringement.
+
+You may not propagate or modify the Library except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify the Library is void, and will automatically terminate your
+rights under this License (including any patent licenses granted
+under the third paragraph of Section 11).
+
+14. Revised Versions of this License.
+
+The Free Software Foundation may publish revised and/or new versions
+of the Lesser General Public License from time to time.  Such new
+versions will be similar in spirit to the present version, but may
+differ in detail to address new problems or concerns.
+
+Each version is given a distinguishing version number.  If the
+Library as you received it specifies that a certain numbered version
+of the Lesser General Public License "or any later version" applies
+to it, you have the option of following the terms and conditions
+either of that published version or of any later version published by
+the Free Software Foundation.  If the Library as you received it does
+not specify a version number of the Lesser General Public License,
+you may choose any version of the Lesser General Public License ever
+published by the Free Software Foundation.
+
+If the Library as you received it specifies that a proxy can decide
+whether future versions of the Lesser General Public License shall
+apply, that proxy's public statement of acceptance of any version is
+permanent authorization for you to choose that version for the
+Library.
+
+15. Miscellaneous.
+
+The Free Software Foundation may publish versions of the Lesser
+General Public License from time to time.  Such new versions will be
+similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+Each version is given a distinguishing version number.  If the
+Library as you received it specifies that a certain numbered version
+of the Lesser General Public License "or any later version" applies
+to it, you have the option of following the terms and conditions
+either of that published version or of any later version published by
+the Free Software Foundation.  If the Library as you received it does
+not specify a version number of the Lesser General Public License,
+you may choose any version of the Lesser General Public License ever
+published by the Free Software Foundation.
+
+If the Library as you received it specifies that a proxy can decide
+whether future versions of the Lesser General Public License shall
+apply, that proxy's public statement of acceptance of any version is
+permanent authorization for you to choose that version for the
+Library.
+
+16. Disclaimer of Warranty.
+
+THERE IS NO WARRANTY FOR THE LIBRARY, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE
+COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE LIBRARY "AS IS"
+WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING,
+BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY
+AND PERFORMANCE OF THE LIBRARY IS WITH YOU.  SHOULD THE LIBRARY
+PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING,
+REPAIR OR CORRECTION.
+
+17. Limitation of Liability.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN
+WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY
+MODIFY AND/OR CONVEY THE LIBRARY AS PERMITTED ABOVE, BE LIABLE TO
+YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR
+CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE
+LIBRARY (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING
+RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A
+FAILURE OF THE LIBRARY TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF
+SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+18. Interpretation of Sections 15 and 16.
+
+If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Library, unless a warranty or assumption of liability accompanies a
+copy of the Library in return for a fee.
+
+END OF TERMS AND CONDITIONS
+
+How to Apply These Terms to Your New Libraries
+
+If you develop a new library, and you want it to be of the greatest
+possible use to the public, we recommend making it free software that
+everyone can redistribute and change.  You can do so by permitting
+redistribution under these terms (or, alternatively, under the terms
+of the ordinary GNU General Public License).
+
+To apply these terms, attach the following notices to the library.
+It is safest to attach them to the start of each source file to most
+effectively convey the exclusion of warranty; and each file should
+have at least the "copyright" line and a pointer to where the full
+notice is found.
+
+<one line to give the library's name and a brief idea of what it does.>
+Copyright (C) <year>  <name of author>
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 3 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+Also add information on how to contact you by electronic and paper mail.
+
+You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the library, if necessary.
+For more information on this, and how to apply and follow the GNU LGPL, see
+<https://www.gnu.org/licenses/>.
+
+The GNU Lesser General Public License does not permit incorporating
+proprietary code into an LGPL library.  If this is a problem for you,
+we recommend you use the GNU GPL instead.

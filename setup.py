@@ -21,11 +21,11 @@ setup(
             'phasetools-julia-setup=phasetools.julia_setup:main',
         ],
     },
-    license='AFL-3.0',
+    license='LGPL-3.0-or-later',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
-        # Remove the deprecated 'License :: OSI Approved :: Academic Free License (AFL)' classifier.
+        'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
