@@ -41,23 +41,71 @@ class PhaseFunctions(MAGEMinBase):
         return result.root
     
     def fractionate_phase(self, phase, out, sys_in, frac_amount=None):
-        """Perform batch fractionation of a phase from the bulk rock composition."""
+        """Perform batch fractionation of a phase from the bulk rock composition.
+
+        Removes a specified fraction of a phase from the current bulk composition
+        and renormalises the remainder. The output is always normalised to sum to 1
+        (molar or weight fractions, depending on ``sys_in``).
+
+        MAGEMin orders ``out.ph`` with solution phases first (``SS_vec``), then
+        pure phases (``PP_vec``).  This method handles both indexing ranges
+        transparently.
+
+        .. note::
+
+            When a phase appears multiple times in ``out.ph`` (e.g. two
+            coexisting pyroxenes on a solvus), only the **first** instance is
+            removed.  Use ``phase_frac()`` to obtain the summed fraction before
+            calling this method if the total solvus fraction is needed.
+
+        Parameters
+        ----------
+        phase : str
+            Phase name as it appears in ``out.ph`` (e.g. ``'g'``, ``'liq'``).
+        out : MAGEMinOutput
+            Raw output from a MAGEMin single-point minimisation.
+        sys_in : str
+            ``'mol'`` or ``'wt'`` — determines which bulk composition and
+            phase composition vectors are used.
+        frac_amount : float or None, optional
+            Fraction of the phase to remove.  If ``None``, the full phase
+            fraction from the minimisation result is used.  Values of 0 or
+            less are treated as a no-op and return the current bulk unchanged.
+
+        Returns
+        -------
+        numpy.ndarray
+            Renormalised bulk composition after fractionation.
+        """
         if sys_in.casefold() == "wt":
             current_X = out.bulk_wt
         else:
             current_X = out.bulk
-        
+
         if phase in out.ph:
             phase_ind = out.ph.index(phase)
-            if sys_in.casefold() == "wt":
-                ph_comp = np.array(out.SS_vec[phase_ind].Comp_wt)
-                ph_frac = out.ph_frac_wt[phase_ind]
+            # MAGEMin orders: solution phases (SS_vec) first, then pure phases (PP_vec)
+            if phase_ind < out.n_SS:
+                if sys_in.casefold() == "wt":
+                    ph_comp = np.array(out.SS_vec[phase_ind].Comp_wt)
+                    ph_frac = out.ph_frac_wt[phase_ind]
+                else:
+                    ph_comp = np.array(out.SS_vec[phase_ind].Comp)
+                    ph_frac = out.ph_frac[phase_ind]
             else:
-                ph_comp = np.array(out.SS_vec[phase_ind].Comp)
-                ph_frac = out.ph_frac[phase_ind]
+                pp_ind = phase_ind - out.n_SS
+                if sys_in.casefold() == "wt":
+                    ph_comp = np.array(out.PP_vec[pp_ind].Comp_wt)
+                    ph_frac = out.ph_frac_wt[phase_ind]
+                else:
+                    ph_comp = np.array(out.PP_vec[pp_ind].Comp)
+                    ph_frac = out.ph_frac[phase_ind]
 
             if frac_amount is None:
                 frac_amount = ph_frac
+
+            if frac_amount <= 0:
+                return np.array(current_X, dtype=float)
 
             if frac_amount >= 1.0:
                 warnings.warn(f"fractionate_phase: requested frac_amount={frac_amount} >= 1.0; skipping.")
