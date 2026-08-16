@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='phasetools',
-    version='0.0.1',
+    version='0.1.0',
     author='Ben Knight',
     author_email='ben.knight@curtin.edu.au',
     description='A python package to perform MAGEMin calculations in python',
