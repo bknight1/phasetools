@@ -12,7 +12,8 @@ from phasetools.core.base import MAGEMinBase
 class TestRedoxLogic(unittest.TestCase):
     def setUp(self):
         # Prevent Initialize_MAGEMin from calling Julia
-        with patch('phasetools.MAGEMin_C.Initialize_MAGEMin', return_value=MagicMock()):
+        with patch('phasetools.core.base.MAGEMin_C') as mock_mc:
+            mock_mc.Initialize_MAGEMin.return_value = MagicMock()
             self.base = MAGEMinBase()
 
     @patch('phasetools.core.phase_properties.get_oxide_apfu')
