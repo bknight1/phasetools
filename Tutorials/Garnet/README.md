@@ -21,5 +21,14 @@ This directory contains tutorials focused on modelling garnet chemistry, growth,
     - Implementing geothermobarometry by minimising the misfit between measured chemistry and thermodynamic predictions.
     - Recovering P-T trajectories from zoned garnet crystals.
 
+### [3. Garnet-Cpx Thermometry](./3-Garnet_cpx_thermometry.ipynb)
+**Objective:** Mapping the garnet–clinopyroxene Fe²⁺–Mg distribution coefficient (Kd) and comparing thermometer calibrations.
+- **Key Features:**
+    - Setting up the S10 eclogite bulk composition in the `mpe` database.
+    - Extracting garnet and clinopyroxene Fe²⁺/Mg from APFU with dynamic cpx phase resolution (`dio`/`omph`/`aug`).
+    - Masking absent and solvus-ambiguous grid cells.
+     - Mapping Kd over a P–T grid and applying Mysen & Heier (1972), Ganguly (1979; explicitly labelled Yavuz & Yıldırım piecewise form), Krogh Ravna (2000), Ellis & Green (1979), and Räheim & Green (1974) calibrations.
+     - Using the intentional traditional mixed Fe convention: garnet Fe from `ox_apfu_FeO` (all treated as Fe²⁺) and cpx Fe²⁺ from the excess-O heuristic split.
+
 ---
 **Units Note:** All tutorials use `kbar` for pressure and `°C` for temperature.

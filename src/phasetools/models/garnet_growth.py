@@ -531,9 +531,9 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         axs[0, 0].set_xlabel('r')
         axs[0, 0].set_ylabel('f')
         axs[0, 0].set_xlim([r_r.min(), r_r.max()])
-        axs[0, 0].plot(r_r, finp, '-', label='Size Distribution')
+        axs[0, 0].plot(r, finp, '-', label='Size Distribution')
         for i in range(n_classes):
-            axs[0, 0].plot([r_r[i], r_r[i]], [0, finp[i]], '-')
+            axs[0, 0].plot([r[i], r[i]], [0, finp[i]], '-')
         axs[0, 0].legend()
 
         # Subplot 2: Classes' birth place
@@ -613,34 +613,3 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             plt.show()
         else:
             plt.close()
-        GVi = np.array(self.gt_vol_frac)
-        GVn = self._compute_normalised_GVG(GVi)
-        first_one_idx = self._first_one_index(GVn)
-        try:
-            last_zero_idx = self._last_zero_before(GVn, first_one_idx, strict=True)
-        except IndexError:
-            last_zero_idx = -1
-        ind = np.arange(last_zero_idx+1, first_one_idx+1)
-        tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
-        n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
-        Gn = GVn[ind] / np.max(GVn[ind])
-        G, t_arr, r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tG)
-        PGrw, TGrw, Mnrw, Mgrw, Ferw = [self._interp(tG, arr, t_arr) for arr in [PG, TG, MnG, MgG, FeG]]
-        Carw = 1 - Mnrw - Mgrw - Ferw
-
-        fig, axs = plt.subplots(3, 2, figsize=(10, 15))
-        fig.suptitle('Garnet formation summary')
-        axs[0, 0].plot(r_r, finp, '-'); [axs[0, 0].plot([r_r[i], r_r[i]], [0, finp[i]], '-') for i in range(n_classes)]
-        axs[0, 1].plot(self.Ti, self.Pi, 'k-'); axs[0, 1].plot(TGrw, PGrw, 'r.')
-        for i in range(0, n_classes, 10): axs[1, 0].plot(t_arr[i:], R[i, i:], '.-')
-        axs[1, 1].plot(tG, Gn, 'k', drawstyle='steps-post'); axs[1, 1].plot(t_arr, G, 'mx')
-        for i in np.arange(0, n_classes, 10):
-            idx = np.arange(i, n_classes); rplt = R[i, idx]
-            axs[2, 0].plot(rplt, Mnrw[idx], '-b'); axs[2, 0].plot(rplt, Mgrw[idx], '-g')
-            axs[2, 0].plot(rplt, Ferw[idx], '-r'); axs[2, 0].plot(rplt, Carw[idx], '-', c='gold')
-        i = garnet_no; idx = np.arange(i, n_classes); rplt = R[i, idx]
-        axs[2, 1].plot(rplt, Mnrw[idx], 'b-'); axs[2, 1].plot(rplt, Mgrw[idx], 'g-')
-        axs[2, 1].plot(rplt, Ferw[idx], 'r-'); axs[2, 1].plot(rplt, Carw[idx], '-', c='gold')
-        plt.tight_layout(rect=(0, 0.03, 1, 0.95))
-        if path: plt.savefig(path)
-        plt.show() if plot_fig else plt.close()
