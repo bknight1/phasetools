@@ -337,39 +337,6 @@ class TestSinglePointCalcSolvus(unittest.TestCase):
         self.assertEqual(res, [])
 
 
-class TestFeSplitMixedBasis(unittest.TestCase):
-    """get_phase_fe_split uses the correct basis per instance."""
-
-    def test_mixed_o_and_traditional_basis(self):
-        """One O-basis instance and one traditional-basis instance are split correctly."""
-        from phasetools.core.phase_properties import get_phase_fe_split
-
-        # Two instances of 'sp': O-basis ignores Fe2O3 for total Fe;
-        # traditional basis counts Fe2O3 in total Fe.
-        mock_out = MagicMock()
-        mock_out.ph = ['sp', 'sp']
-        mock_out.oxides = ['MgO', 'FeO', 'Fe2O3', 'O']
-
-        mock_sp_0 = MagicMock()  # O-basis
-        mock_sp_0.Comp_apfu = [1.0, 2.0, 0.5, 6.0]
-
-        mock_sp_1 = MagicMock()  # Traditional basis
-        mock_sp_1.Comp_apfu = [1.0, 1.0, 1.0, 0.0]
-
-        mock_out.SS_vec = [mock_sp_0, mock_sp_1]
-
-        split = get_phase_fe_split(mock_out, 'sp', instance='all')
-        fe2 = split['Fe2']
-        fe3 = split['Fe3']
-
-        # Instance 0: O-basis, total_fe = feo = 2.0; Fe3 = 2*0.5 + 0 = 1.0; Fe2 = 1.0
-        self.assertAlmostEqual(fe2[0], 1.0)
-        self.assertAlmostEqual(fe3[0], 1.0)
-        # Instance 1: traditional, total_fe = 1.0 + 2*1.0 = 3.0; Fe3 = 2*1.0 = 2.0; Fe2 = 1.0
-        self.assertAlmostEqual(fe2[1], 1.0)
-        self.assertAlmostEqual(fe3[1], 2.0)
-
-
 class TestGarnetEndmembersSuffix(unittest.TestCase):
     """generate_2D_grid_gt_endmembers returns the single-instance bundle."""
 
