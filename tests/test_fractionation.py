@@ -359,5 +359,47 @@ class TestStartingMeltValidation(unittest.TestCase):
         self.assertIn("does not match", str(ctx.exception))
 
 
+# ===========================================================================
+# run_stage_0: no melt / no solid edge case
+# ===========================================================================
+class TestStageZeroNoMeltNoSolid(unittest.TestCase):
+    """run_stage_0 must return zeros for avg_melt and empty layer_modes when liq is absent."""
+
+    @patch('phasetools.models.magma_ocean.MAGEMinBase.__init__', return_value=None)
+    def test_no_melt_no_solid(self, mock_base_init):
+        from phasetools.models.magma_ocean import MagmaOcean
+        import phasetools.models.magma_ocean as mo_module
+
+        mo = MagmaOcean.__new__(MagmaOcean)
+        mo._Xoxides_py = ['SiO2', 'Al2O3', 'MgO']
+        mo.sys_in = 'mol'
+        mo.data = MagicMock()
+        mo.X = np.array([33.0, 33.0, 34.0])
+        mo.Xoxides = MagicMock()
+        mo.rm_list = None
+
+        # find_temperature_at_vol_frac is called but its return value is irrelevant
+        # because the mocked output has no phases.
+        mo.find_temperature_at_vol_frac = MagicMock(return_value=1200.0)
+
+        mock_out = MagicMock()
+        mock_out.ph = []
+        mock_out.n_SS = 0
+        mock_out.SS_vec = []
+        mock_out.PP_vec = []
+
+        mock_magemin_c = MagicMock()
+        mock_magemin_c.single_point_minimization = MagicMock(return_value=mock_out)
+
+        with patch.object(mo_module, 'MAGEMin_C', mock_magemin_c):
+            results, avg_melt = mo.run_stage_0(
+                p_start=5.0, p_end=0.001, solid_frac=0.5, p_intervals=3
+            )
+
+        self.assertTrue(np.all(np.isfinite(avg_melt)))
+        self.assertTrue(np.allclose(avg_melt, np.zeros(3)))
+        self.assertEqual(results["layer_modes"], {})
+
+
 if __name__ == '__main__':
     unittest.main()
