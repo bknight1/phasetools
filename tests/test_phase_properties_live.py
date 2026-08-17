@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from phasetools.calculators.pt_grid import MAGEMinPTGridCalculator
-from phasetools.core.phase_properties import get_phase_mg_number, get_phase_mg2_number, phase_frac
+from phasetools.core.phase_properties import get_phase_fe_split, get_phase_mg_number, get_phase_mg2_number, phase_frac
 
 try:
     from juliacall import Main as jl
@@ -250,4 +250,141 @@ class TestHeuristicAcrossDatabases(unittest.TestCase):
             ox_names = [str(o) for o in out.oxides]
             fe_total = float(out.SS_vec[ph_idx].Comp_apfu[ox_names.index('FeO')])
             self.assertAlmostEqual(split['Fe2'] + split['Fe3'], fe_total, places=2)
+
+
+@unittest.skipUnless(HAS_JULIA, "Julia + MAGEMin_C not available")
+class TestMbN_MORB(unittest.TestCase):
+    """Test heuristic for N-MORB composition (Gale et al., 2013) in mb database."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = 'mb'
+        # N-MORB from MAGEMin ig test=2 (Gale et al., 2013, given by E. Green)
+        cls.Xoxides = ["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O", "TiO2", "O", "Cr2O3", "H2O"]
+        cls.X = [53.21, 9.41, 12.21, 12.21, 8.65, 0.09, 2.90, 1.21, 0.69, 0.02, 0.0]
+        cls.calc = MAGEMinPTGridCalculator(db=cls.db, dataset=636)
+        cls.calc.setup_bulk_composition(cls.Xoxides, cls.X, sys_in='wt')
+
+    PT_POINTS = [
+        (15.0, 600.0),
+        (20.0, 700.0),
+        (25.0, 750.0),
+    ]
+
+    def test_heuristic_mg_matches_site_fractions(self):
+        """Heuristic Mg# matches site-fraction Mg# for g and cpx across P-T range."""
+        target_phases = {'g', 'dio', 'omph', 'aug', 'cpx'}
+        for P, T in self.PT_POINTS:
+            out = self.calc.calculate_grid(P, T)[0]
+            for ph in out.ph:
+                if ph not in target_phases:
+                    continue
+                ph_idx = out.ph.index(ph)
+                if ph_idx >= len(out.SS_vec):
+                    continue
+                ss = out.SS_vec[ph_idx]
+                sf = dict(zip(list(ss.siteFractionsNames), [float(x) for x in ss.siteFractions]))
+
+                fe2_sf = sum(v for k, v in sf.items() if 'Fe' in k and '3' not in k)
+                mg_sf = sum(v for k, v in sf.items() if 'Mg' in k)
+
+                if fe2_sf + mg_sf <= 0:
+                    continue
+
+                mg_sf_ratio = mg_sf / (mg_sf + fe2_sf)
+                mg_h = get_phase_mg2_number(out, ph)
+
+                with self.subTest(P=P, T=T, phase=ph):
+                    self.assertAlmostEqual(mg_h, mg_sf_ratio, places=3,
+                        msg=f"{ph} Mg# mismatch: heuristic={mg_h:.6f} vs sitefrac={mg_sf_ratio:.6f}")
+
+    def test_kd_mg_independent_of_units(self):
+        """K_D and Mg# are identical whether bulk is wt% or mol%."""
+        from phasetools.utils.bulk_rock import convert_wt_percent_to_mol_percent, get_molar_mass_dict
+        mass_dict = get_molar_mass_dict()
+        X_mol = convert_wt_percent_to_mol_percent(self.X, self.Xoxides, mass_dict)
+
+        calc_wt = MAGEMinPTGridCalculator(db=self.db, dataset=636)
+        calc_wt.setup_bulk_composition(self.Xoxides, self.X, sys_in='wt')
+
+        calc_mol = MAGEMinPTGridCalculator(db=self.db, dataset=636)
+        calc_mol.setup_bulk_composition(self.Xoxides, X_mol, sys_in='mol')
+
+        P, T = 20.0, 700.0
+        out_wt = calc_wt.calculate_grid(P, T)[0]
+        out_mol = calc_mol.calculate_grid(P, T)[0]
+
+        if 'g' not in out_wt.ph or 'aug' not in out_wt.ph:
+            self.skipTest("g + aug not stable at P=20, T=700")
+
+        for ph in ['g', 'aug']:
+            mg_wt = get_phase_mg2_number(out_wt, ph)
+            mg_mol = get_phase_mg2_number(out_mol, ph)
+            with self.subTest(phase=ph, metric='Mg#'):
+                self.assertAlmostEqual(mg_wt, mg_mol, places=3,
+                    msg=f"{ph} Mg# differs: wt={mg_wt:.6f} vs mol={mg_mol:.6f}")
+
+        g_wt = get_phase_fe_split(out_wt, 'g')
+        c_wt = get_phase_fe_split(out_wt, 'aug')
+        g_mol = get_phase_fe_split(out_mol, 'g')
+        c_mol = get_phase_fe_split(out_mol, 'aug')
+
+        ox_names = [str(o) for o in out_wt.oxides]
+        mg_g_wt = float(out_wt.SS_vec[out_wt.ph.index('g')].Comp_apfu[ox_names.index('MgO')])
+        mg_c_wt = float(out_wt.SS_vec[out_wt.ph.index('aug')].Comp_apfu[ox_names.index('MgO')])
+        mg_g_mol = float(out_mol.SS_vec[out_mol.ph.index('g')].Comp_apfu[ox_names.index('MgO')])
+        mg_c_mol = float(out_mol.SS_vec[out_mol.ph.index('aug')].Comp_apfu[ox_names.index('MgO')])
+
+        kd_wt = (g_wt['Fe2']/mg_g_wt) / (c_wt['Fe2']/mg_c_wt) if c_wt['Fe2'] > 0 and mg_c_wt > 0 else 0
+        kd_mol = (g_mol['Fe2']/mg_g_mol) / (c_mol['Fe2']/mg_c_mol) if c_mol['Fe2'] > 0 and mg_c_mol > 0 else 0
+
+        with self.subTest(metric='K_D'):
+            self.assertAlmostEqual(kd_wt, kd_mol, places=1,
+                msg=f"K_D differs: wt={kd_wt:.6f} vs mol={kd_mol:.6f}")
+
+
+@unittest.skipUnless(HAS_JULIA, "Julia + MAGEMin_C not available")
+class TestIgHeuristic(unittest.TestCase):
+    """Test heuristic for ig database with N-MORB composition."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = 'ig'
+        cls.Xoxides = ["SiO2", "Al2O3", "CaO", "MgO", "FeO", "K2O", "Na2O", "TiO2", "O", "Cr2O3", "H2O"]
+        cls.X = [53.21, 9.41, 12.21, 12.21, 8.65, 0.09, 2.90, 1.21, 0.69, 0.02, 0.0]
+        cls.calc = MAGEMinPTGridCalculator(db=cls.db, dataset=636)
+        cls.calc.setup_bulk_composition(cls.Xoxides, cls.X, sys_in='wt')
+
+    PT_POINTS = [
+        (20.0, 700.0),
+        (25.0, 750.0),
+        (30.0, 800.0),
+    ]
+
+    def test_heuristic_mg_matches_site_fractions(self):
+        """Heuristic Mg# matches site-fraction Mg# for g and cpx across P-T range."""
+        target_phases = {'g', 'cpx'}
+        for P, T in self.PT_POINTS:
+            out = self.calc.calculate_grid(P, T)[0]
+            for ph in out.ph:
+                if ph not in target_phases:
+                    continue
+                ph_idx = out.ph.index(ph)
+                if ph_idx >= len(out.SS_vec):
+                    continue
+                ss = out.SS_vec[ph_idx]
+                sf = dict(zip(list(ss.siteFractionsNames), [float(x) for x in ss.siteFractions]))
+
+                fe2_sf = sum(v for k, v in sf.items() if 'Fe' in k and '3' not in k)
+                mg_sf = sum(v for k, v in sf.items() if 'Mg' in k)
+
+                if fe2_sf + mg_sf <= 0:
+                    continue
+
+                mg_sf_ratio = mg_sf / (mg_sf + fe2_sf)
+                mg_h = get_phase_mg2_number(out, ph)
+
+                with self.subTest(P=P, T=T, phase=ph):
+                    self.assertAlmostEqual(mg_h, mg_sf_ratio, places=3,
+                        msg=f"{ph} Mg# mismatch: heuristic={mg_h:.6f} vs sitefrac={mg_sf_ratio:.6f}")
 

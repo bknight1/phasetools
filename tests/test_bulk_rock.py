@@ -112,17 +112,6 @@ class TestFractionConverters(unittest.TestCase):
     # ------------------------------------------------------------------ #
     # Iron oxide workflows built on the converters
     # ------------------------------------------------------------------ #
-    def test_feot_from_wt_fractions(self):
-        """FeOt (wt) = FeO + Fe2O3 * (2 * M_FeO / M_Fe2O3)."""
-        feo, fe2o3 = 5.0, 2.0
-        factor = 2 * self.mass_dict['FeO'] / self.mass_dict['Fe2O3']
-        self.assertAlmostEqual(feo + fe2o3 * factor, feo + fe2o3 * factor)
-
-    def test_feot_from_mol_fractions(self):
-        """FeOt (mol) = FeO + 2 * Fe2O3 (molar basis)."""
-        feo_mol, fe2o3_mol = 0.05, 0.01
-        self.assertAlmostEqual(feo_mol + 2 * fe2o3_mol, 0.07)
-
     def test_garnet_weight_fractions_sum_to_one(self):
         """atomic_frac_to_wt_frac keeps weight fractions summing to 1.0."""
         from phasetools.utils.bulk_rock import atomic_frac_to_wt_frac

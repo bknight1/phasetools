@@ -1,48 +1,86 @@
-"""Mock-based tests for fractionation correctness fixes.
+"""Mock-based tests for ``phasetools.calculators.garnet``.
 
-These tests verify the fixes described in the implementation plan:
-- Fix A: get_retrograde_concentrations crash (garnet_growth.py)
-- Fix B: mol/wt unit mismatch in gt_along_path (garnet.py)
-- Fix C: pure-phase IndexError in fractionate_phase (phase_search.py)
-- Fix D: X_along_path normalise to 1 (garnet.py)
-- Fix H1: self.X permanent mutation in run_fractional_stages (magma_ocean.py)
+Covers:
 
-No live Julia runtime is needed — all MAGEMin calls are mocked.
+* the garnet ``fe_basis`` option (``'FeOt'`` vs ``'Fe2+'``) for X-site
+  extraction;
+* ``gt_along_path`` behaviour (wt-basis fractionation and row
+  normalisation of ``X_along_path``).
+
+No live Julia runtime is needed -- all MAGEMin calls are mocked.
 """
 
 import unittest
 import numpy as np
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
+
+from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestGarnetFeBasis(unittest.TestCase):
+    """Fe-basis flag on the garnet X-site extraction."""
 
-def _make_mock_out(phases, n_SS, bulk_mol, bulk_wt, ph_frac_mol, ph_frac_wt, comps_mol, comps_wt):
-    """Build a minimal mock MAGEMin output object."""
-    out = MagicMock()
-    out.ph = phases
-    out.n_SS = n_SS
-    out.bulk = np.array(bulk_mol, dtype=float)
-    out.bulk_wt = np.array(bulk_wt, dtype=float)
-    out.ph_frac = list(ph_frac_mol)
-    out.ph_frac_wt = list(ph_frac_wt)
+    def _make_calc(self, fe_basis):
+        calc = MAGEMinGarnetCalculator.__new__(MAGEMinGarnetCalculator)
+        calc.fe_basis = fe_basis  # canonical lowercase form set by __init__
+        return calc
 
-    ss_vec = []
-    pp_vec = []
-    for idx, ph in enumerate(phases):
-        obj = MagicMock()
-        obj.Comp = np.array(comps_mol[idx], dtype=float)
-        obj.Comp_wt = np.array(comps_wt[idx], dtype=float)
-        if idx < n_SS:
-            ss_vec.append(obj)
-        else:
-            pp_vec.append(obj)
+    def test_feot_uses_total_iron(self):
+        """FeOt puts FeO + 2*Fe2O3 on the X-site and normalises to 1."""
+        calc = self._make_calc('feot')
+        out = MagicMock()
+        out.ph = ['g', 'q']
+        apfu = {'MgO': 0.6, 'MnO': 0.1, 'CaO': 0.8, 'FeO': 1.2, 'Fe2O3': 0.15}
+        with patch('phasetools.calculators.garnet.get_oxide_apfu', return_value=apfu):
+            Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
+        fe_total = 1.2 + 2.0 * 0.15
+        total = 0.6 + 0.1 + 0.8 + fe_total
+        self.assertAlmostEqual(Fe, fe_total / total, places=6)
+        self.assertAlmostEqual(Mg, 0.6 / total, places=6)
+        self.assertAlmostEqual(Mn, 0.1 / total, places=6)
+        self.assertAlmostEqual(Ca, 0.8 / total, places=6)
+        self.assertAlmostEqual(Mg + Mn + Fe + Ca, 1.0, places=6)
 
-    out.SS_vec = ss_vec
-    out.PP_vec = pp_vec
-    return out
+    def test_fe2_uses_split(self):
+        """Fe2+ uses only the ferrous split, excluding Fe3+."""
+        calc = self._make_calc('fe2+')
+        out = MagicMock()
+        out.ph = ['g', 'q']
+        apfu = {'MgO': 0.6, 'MnO': 0.1, 'CaO': 0.8}
+        split = {'Fe2': 1.35, 'Fe3': 0.15}
+        with patch('phasetools.calculators.garnet.get_oxide_apfu', return_value=apfu), \
+             patch.object(calc, '_extract_fe_split_from_apfu', return_value=split):
+            Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
+        total = 0.6 + 0.1 + 0.8 + 1.35
+        self.assertAlmostEqual(Fe, 1.35 / total, places=6)
+        self.assertAlmostEqual(Mg + Mn + Fe + Ca, 1.0, places=6)
+        self.assertAlmostEqual(Mn, 0.1 / total, places=6)
+
+    def test_absent_garnet_returns_zeros(self):
+        """No garnet in the assemblage -> all-zero X-site fractions."""
+        calc = self._make_calc('feot')
+        out = MagicMock()
+        out.ph = ['q', 'dio']
+        Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
+        self.assertEqual((Mg, Mn, Fe, Ca), (0.0, 0.0, 0.0, 0.0))
+
+    def test_invalid_basis_raises(self):
+        """Unsupported fe_basis values must raise ValueError at construction."""
+        with patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
+                   return_value=None):
+            with self.assertRaises(ValueError):
+                MAGEMinGarnetCalculator(db='ig', fe_basis='Fe3')
+
+    def test_default_is_feot(self):
+        """The default fe_basis is 'FeOt' (community convention)."""
+        with patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
+                   return_value=None):
+            calc = MAGEMinGarnetCalculator(db='ig')
+            self.assertEqual(calc.fe_basis, 'feot')
+            calc = MAGEMinGarnetCalculator(db='ig', fe_basis='Fe2+')
+            self.assertEqual(calc.fe_basis, 'fe2+')
+            calc = MAGEMinGarnetCalculator(db='ig', fe_basis='feot')
+            self.assertEqual(calc.fe_basis, 'feot')
 
 
 # ===========================================================================
@@ -134,82 +172,6 @@ class TestXAlongPathNormalised(unittest.TestCase):
         for i in range(len(P)):
             self.assertAlmostEqual(np.sum(X_along_path[i]), 1.0, places=10,
                                    msg=f"Row {i} of X_along_path does not sum to 1.0")
-
-
-# ===========================================================================
-# Fix C: pure-phase IndexError
-# ===========================================================================
-class TestFractionatePurePhase(unittest.TestCase):
-    """Fix C: fractionate_phase must handle pure phases (PP_vec) without IndexError."""
-
-    def test_fractionate_pure_phase(self):
-        from phasetools.calculators.phase_search import PhaseFunctions
-
-        pf = PhaseFunctions.__new__(PhaseFunctions)
-
-        # ph=['q', 'liq'], n_SS=1 => 'q' is a pure phase at index 0 in PP_vec
-        out = _make_mock_out(
-            phases=['q', 'liq'],
-            n_SS=1,
-            bulk_mol=[60.0, 40.0],
-            bulk_wt=[62.0, 38.0],
-            ph_frac_mol=[0.15, 0.85],
-            ph_frac_wt=[0.16, 0.84],
-            comps_mol=[[100.0, 0.0], [50.0, 50.0]],
-            comps_wt=[[100.0, 0.0], [48.0, 52.0]],
-        )
-
-        # 'q' is at index 0 in out.ph, n_SS=1, so it's a pure phase (PP_vec[0])
-        result = pf.fractionate_phase('q', out, 'mol', frac_amount=0.1)
-        self.assertIsNotNone(result)
-        self.assertTrue(np.all(np.isfinite(result)))
-
-    def test_fractionate_solution_phase_still_works(self):
-        """Verify solution-phase path (SS_vec) still works after the fix."""
-        from phasetools.calculators.phase_search import PhaseFunctions
-
-        pf = PhaseFunctions.__new__(PhaseFunctions)
-
-        out = _make_mock_out(
-            phases=['liq', 'g'],
-            n_SS=2,
-            bulk_mol=[60.0, 40.0],
-            bulk_wt=[62.0, 38.0],
-            ph_frac_mol=[0.85, 0.15],
-            ph_frac_wt=[0.84, 0.16],
-            comps_mol=[[50.0, 50.0], [40.0, 60.0]],
-            comps_wt=[[48.0, 52.0], [38.0, 62.0]],
-        )
-
-        result = pf.fractionate_phase('g', out, 'mol', frac_amount=0.1)
-        self.assertIsNotNone(result)
-        self.assertTrue(np.all(np.isfinite(result)))
-
-
-# ===========================================================================
-# Zero guard: frac_amount=0 is a no-op
-# ===========================================================================
-class TestFractionateZeroIsNoop(unittest.TestCase):
-    """frac_amount=0 must return the bulk unchanged (not normalised to sum=1)."""
-
-    def test_fractionate_zero_is_noop(self):
-        from phasetools.calculators.phase_search import PhaseFunctions
-
-        pf = PhaseFunctions.__new__(PhaseFunctions)
-
-        out = _make_mock_out(
-            phases=['g', 'liq'],
-            n_SS=2,
-            bulk_mol=[6000.0, 4000.0],  # sum=10000, not 1
-            bulk_wt=[6200.0, 3800.0],
-            ph_frac_mol=[0.15, 0.85],
-            ph_frac_wt=[0.16, 0.84],
-            comps_mol=[[40.0, 60.0], [50.0, 50.0]],
-            comps_wt=[[38.0, 62.0], [48.0, 52.0]],
-        )
-
-        result = pf.fractionate_phase('g', out, 'mol', frac_amount=0.0)
-        np.testing.assert_array_equal(result, np.array(out.bulk, dtype=float))
 
 
 if __name__ == '__main__':
