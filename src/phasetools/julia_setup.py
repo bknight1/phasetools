@@ -5,7 +5,7 @@ import sys
 
 
 def _run_julia(args):
-    return subprocess.run(["julia", *args], capture_output=True, text=True)
+    return subprocess.run(["julia", *args], capture_output=True, text=True, check=False)
 
 
 def check_julia_installed():
@@ -68,7 +68,7 @@ def main(argv=None):
         try:
             install_magemin()
             print("MAGEMin_C installed successfully.")
-        except Exception as exc:
+        except (RuntimeError, OSError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
 

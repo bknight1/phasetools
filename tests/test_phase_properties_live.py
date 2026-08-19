@@ -1,10 +1,17 @@
 import unittest
+from typing import ClassVar
+
 import numpy as np
+
 from phasetools.calculators.pt_grid import MAGEMinPTGridCalculator
-from phasetools.core.phase_properties import get_phase_fe_split, get_phase_mg_number, get_phase_mg2_number, phase_frac
+from phasetools.core.phase_properties import (
+    get_phase_fe_split,
+    get_phase_mg2_number,
+    phase_frac,
+)
 
 try:
-    from juliacall import Main as jl
+    import juliacall  # noqa: F401 — side-effect import to test availability
     HAS_JULIA = True
 except ImportError:
     HAS_JULIA = False
@@ -24,7 +31,7 @@ class TestSiteOccupancy(unittest.TestCase):
         # 30 kbar (3 GPa), 700 C - where g and dio are stable in mpe
         cls.out = cls.calc.calculate_grid(30.0, 700.0)[0]
 
-    PT_POINTS = [
+    PT_POINTS: ClassVar[list[tuple[float, float]]] = [
         (5.0, 450.0),
         (10.0, 550.0),
         (20.0, 650.0),
@@ -119,8 +126,7 @@ class TestSiteOccupancy(unittest.TestCase):
         fe2_h, fe3_h = split['Fe2'], split['Fe3']
         
         ph_idx = out.ph.index('amp')
-        em = {str(n): float(f) for n, f in zip(out.SS_vec[ph_idx].emNames, out.SS_vec[ph_idx].emFrac)}
-        
+
         # Sum Fe2+ and Fe3+ from endmembers
         # Use sum constraint as primary check: Fe2+ + Fe3+ = total Fe
         ox_names = [str(o) for o in out.oxides]
@@ -265,7 +271,7 @@ class TestMbN_MORB(unittest.TestCase):
         cls.calc = MAGEMinPTGridCalculator(db=cls.db, dataset=636)
         cls.calc.setup_bulk_composition(cls.Xoxides, cls.X, sys_in='wt')
 
-    PT_POINTS = [
+    PT_POINTS: ClassVar[list[tuple[float, float]]] = [
         (15.0, 600.0),
         (20.0, 700.0),
         (25.0, 750.0),
@@ -300,7 +306,10 @@ class TestMbN_MORB(unittest.TestCase):
 
     def test_kd_mg_independent_of_units(self):
         """K_D and Mg# are identical whether bulk is wt% or mol%."""
-        from phasetools.utils.bulk_rock import convert_wt_percent_to_mol_percent, get_molar_mass_dict
+        from phasetools.utils.bulk_rock import (
+            convert_wt_percent_to_mol_percent,
+            get_molar_mass_dict,
+        )
         mass_dict = get_molar_mass_dict()
         X_mol = convert_wt_percent_to_mol_percent(self.X, self.Xoxides, mass_dict)
 
@@ -355,7 +364,7 @@ class TestIgHeuristic(unittest.TestCase):
         cls.calc = MAGEMinPTGridCalculator(db=cls.db, dataset=636)
         cls.calc.setup_bulk_composition(cls.Xoxides, cls.X, sys_in='wt')
 
-    PT_POINTS = [
+    PT_POINTS: ClassVar[list[tuple[float, float]]] = [
         (20.0, 700.0),
         (25.0, 750.0),
         (30.0, 800.0),

@@ -1,12 +1,16 @@
-import numpy as np
-import sys
 import warnings
+from typing import Any
+
+import numpy as np
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
 from scipy import optimize
-from typing import List, Dict, Any, Tuple, Optional
-from ..core.base import MAGEMinBase
-from ..core.phase_properties import phase_frac, get_phase_chemistry
+
 from phasetools import MAGEMin_C
-from juliacall import Main as jl, convert as jlconvert
+
+from ..core.base import MAGEMinBase
+from ..core.phase_properties import phase_frac
+
 
 class MagmaOcean(MAGEMinBase):
     """
@@ -75,8 +79,10 @@ class MagmaOcean(MAGEMinBase):
         """Calculate volume of a spherical shell between radii r1 and r2."""
         return (4.0/3.0) * np.pi * (np.abs(r1**3 - r2**3))
 
-    def find_temperature_at_vol_frac(self, P: float, target_vol_frac: float, bracket: List[float] = [800, 3000]) -> float:
+    def find_temperature_at_vol_frac(self, P: float, target_vol_frac: float, bracket: list[float] | None = None) -> float:
         """Find the temperature at which a specific volume fraction of solid is reached."""
+        if bracket is None:
+            bracket = [800, 3000]
         def func(T):
             out = MAGEMin_C.single_point_minimization(P, T, self.data, X=self.X, Xoxides=self.Xoxides, sys_in=self.sys_in, rm_list=self.rm_list)
             # Total solid fraction = 1 - melt fraction (liq)
@@ -112,7 +118,7 @@ class MagmaOcean(MAGEMinBase):
         else:
             return np.array(obj.Comp, dtype=float)
 
-    def run_stage_0(self, p_start: float, p_end: float, solid_frac: float = 0.5, p_intervals: int = 20) -> Tuple[Dict[str, Any], np.ndarray]:
+    def run_stage_0(self, p_start: float, p_end: float, solid_frac: float = 0.5, p_intervals: int = 20) -> tuple[dict[str, Any], np.ndarray]:
         """
         Stage 0: Equilibrium crystallisation from 0 to target solid fraction.
         """
@@ -171,14 +177,14 @@ class MagmaOcean(MAGEMinBase):
         
         return results, avg_melt
 
-    def run_fractional_stages(self, 
-                               starting_melt: np.ndarray, 
-                               p_start: float, 
-                               p_end: float, 
+    def run_fractional_stages(self,
+                               starting_melt: np.ndarray,
+                               p_start: float,
+                               p_end: float,
                                vol_step: float = 0.05,
                                starting_vol_frac: float = 0.5,
                                n_stages: int = 10,
-                               float_phases: List[str] = ['pl', 'q', 'fsp', 'san', 'ksp']) -> List[Dict[str, Any]]:
+                               float_phases: list[str] | None = None) -> list[dict[str, Any]]:
         """
         Fractional crystallisation stages of the remaining melt.
         
@@ -203,6 +209,8 @@ class MagmaOcean(MAGEMinBase):
         float_phases : list[str]
             List of phases that float to form the crust.
         """
+        if float_phases is None:
+            float_phases = ['pl', 'q', 'fsp', 'san', 'ksp']
         all_stage_results = []
         current_melt_comp = starting_melt
 

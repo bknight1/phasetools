@@ -1,5 +1,8 @@
-from juliacall import Main as jl, convert as jlconvert
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
+
 from phasetools import MAGEMin_C
+
 
 def single_point_minimization_with_conversion(P, T, data, X, Xoxides, sys_in="wt", rm_list=None):
     """

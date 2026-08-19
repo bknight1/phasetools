@@ -1,12 +1,14 @@
 import unittest
+
 import numpy as np
 
 from phasetools.utils.bulk_rock import (
-    get_molar_mass_dict,
     get_atomic_mass_dict,
+    get_molar_mass_dict,
     mol_fractions_to_wt_fractions,
     wt_fractions_to_mol_fractions,
 )
+
 
 class TestFractionConverters(unittest.TestCase):
     """Tests for the non-normalising mole/weight fraction converters."""

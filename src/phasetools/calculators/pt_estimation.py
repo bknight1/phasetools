@@ -1,8 +1,11 @@
 import numpy as np
-import phasetools
 from scipy import optimize
+
+import phasetools
+
 from ..core.base import MAGEMinBase
 from ..core.phase_properties import extract_end_member, get_oxide_apfu
+
 
 class PhasePTEstimator(MAGEMinBase):
     """
@@ -57,7 +60,7 @@ class PhasePTEstimator(MAGEMinBase):
             sigma = np.where(sigma < 1e-12, 1.0, sigma)
             
             return np.sqrt(np.mean((diff / sigma)**2))
-        except Exception:
+        except Exception:  # noqa: BLE001 — optimiser penalty: any MAGEMin failure means this P-T is infeasible
             return 1e6 
 
     def solve(self, target_chemistry, phase, components, comp_type, bounds, uncertainty=None,
@@ -117,7 +120,7 @@ class PhasePTEstimator(MAGEMinBase):
                 sys_in=self.sys_in, rm_list=self.rm_list
             )
             res.modelled_composition = self._get_phase_composition(out, phase, components, comp_type)
-        except Exception:
+        except Exception:  # noqa: BLE001 — any calc failure → no composition to compare
             res.modelled_composition = None
 
         return res

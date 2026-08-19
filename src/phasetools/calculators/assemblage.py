@@ -1,8 +1,12 @@
-import numpy as np
 import sys
+
+import numpy as np
+
+from phasetools import MAGEMin_C
+
 from ..core.base import MAGEMinBase
 from ..core.phase_properties import phase_frac
-from phasetools import MAGEMin_C
+
 
 class MAGEMinAssemblageCalculator(MAGEMinBase):
     """
