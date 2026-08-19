@@ -25,24 +25,29 @@
 
 ## 📦 Installation
 
-### 1. Python Package
-Install `phasetools` in editable mode from the repository root:
+### 1. Conda / mamba (Linux & CI)
 
 ```bash
-python -m pip install -e .
-```
-
-### 2. Julia Environment Setup
-`phasetools` requires Julia and the `MAGEMin_C` package. Use the built-in helper to check your environment:
-
-```bash
+mamba env create -f environment.yml
+conda activate phasetools
+phasetools-julia-setup --install
 phasetools-julia-setup --check
 ```
 
-If `MAGEMin_C` is missing, install it automatically:
+*Note: On macOS (especially Apple Silicon), conda-forge's `julia` package is unavailable — use the pip + juliaup path below instead.*
+
+### 2. pip + juliaup (cross-platform, incl. macOS)
 
 ```bash
+python -m pip install -e .
+phasetools-julia-setup --check
 phasetools-julia-setup --install
+```
+
+To also install Jupyter (for tutorials) and dev tooling (ruff):
+
+```bash
+python -m pip install -e ".[jupyter,dev]"
 ```
 
 *Note: If Julia is not installed on your system, please download it from [julialang.org](https://julialang.org/downloads/).*

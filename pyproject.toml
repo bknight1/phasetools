@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phasetools"
+version = "0.1.0"
+description = "A python package to perform MAGEMin calculations in python"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Ben Knight", email = "ben.knight@curtin.edu.au" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering",
+    "Natural Language :: English",
+]
+dependencies = [
+    "pandas>=1.0.0",
+    "numpy>=1.18.0",
+    "matplotlib>=3.0.0",
+    "scipy>=1.4.0",
+    "molmass>=2024.0.0",
+    "juliacall>=0.9",
+]
+
+[project.optional-dependencies]
+jupyter = ["jupyterlab", "ipykernel", "nbconvert"]
+dev = ["ruff"]
+
+[project.scripts]
+phasetools-julia-setup = "phasetools.julia_setup:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+extend-exclude = ["Tutorials"]
