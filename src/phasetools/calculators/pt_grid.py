@@ -1,10 +1,21 @@
-import numpy as np
 import sys
-from juliacall import Main as jl, convert as jlconvert
-from ..core.base import MAGEMinBase
-from ..core.phase_properties import extract_end_member, get_oxide_apfu, get_phase_chemistry, get_phase_mg_number, _phase_indices
-from ..utils.bulk_rock import atomic_mass_dict, atomic_frac_to_wt_frac
+
+import numpy as np
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
+
 from phasetools import MAGEMin_C
+
+from ..core.base import MAGEMinBase
+from ..core.phase_properties import (
+    _phase_indices,
+    extract_end_member,
+    get_oxide_apfu,
+    get_phase_chemistry,
+    get_phase_mg_number,
+)
+from ..utils.bulk_rock import atomic_frac_to_wt_frac, atomic_mass_dict
+
 
 class MAGEMinPTGridCalculator(MAGEMinBase):
     """
@@ -69,7 +80,7 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
         unique_phases = set()
         for o in out:
             unique_phases.update(o.ph)
-        return sorted(list(unique_phases))
+        return sorted(unique_phases)
 
     def get_phase_endmembers(self, phase, grid_out=None):
         """
@@ -207,6 +218,14 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
                 instances[k]["Fe2"] = np.full(P_len, np.nan)
                 instances[k]["Fe3"] = np.full(P_len, np.nan)
 
+        def _fill(key, value, idx):
+            vals = np.atleast_1d(np.asarray(value, dtype=float))
+            n = len(vals)
+            for k in range(n_inst):
+                if k < n:
+                    instances[k][key][idx] = vals[k]
+                # else stays NaN
+
         for i in range(P_len):
             if phase not in out[i].ph:
                 continue
@@ -217,32 +236,24 @@ class MAGEMinPTGridCalculator(MAGEMinBase):
                 instances[k]["vol_frac"][i] = float(out[i].ph_frac_vol[j])
             # instances k >= len(n_idx) stay NaN
 
-            def _fill(key, value):
-                vals = np.atleast_1d(np.asarray(value, dtype=float))
-                n = len(vals)
-                for k in range(n_inst):
-                    if k < n:
-                        instances[k][key][i] = vals[k]
-                    # else stays NaN
-
             if end_members:
                 for em in end_members:
-                    _fill(f"em_{em}", extract_end_member(phase, out[i], em, self.sys_in, instance='all'))
+                    _fill(f"em_{em}", extract_end_member(phase, out[i], em, self.sys_in, instance='all'), i)
             if oxides:
                 apfu = get_oxide_apfu(out[i], phase, oxides, instance='all')
-                for ox in oxides: _fill(f"ox_apfu_{ox}", apfu.get(ox, np.zeros(0)))
+                for ox in oxides: _fill(f"ox_apfu_{ox}", apfu.get(ox, np.zeros(0)), i)
             if chemistry:
                 chem = get_phase_chemistry(out[i], phase, chemistry, self.sys_in, instance='all')
-                for ox in chemistry: _fill(f"chem_{ox}", chem.get(ox, np.zeros(0)))
+                for ox in chemistry: _fill(f"chem_{ox}", chem.get(ox, np.zeros(0)), i)
             if cations:
                 cat_vals = self._extract_cations_from_apfu(out[i], phase, cations, self.sys_in)
-                for c in cations: _fill(f"cat_{c}", cat_vals[f"cat_{c}"])
+                for c in cations: _fill(f"cat_{c}", cat_vals[f"cat_{c}"], i)
             if mg_number:
-                _fill("Mg_number", get_phase_mg_number(out[i], phase, instance='all'))
+                _fill("Mg_number", get_phase_mg_number(out[i], phase, instance='all'), i)
             if fe_split:
                 split = self._extract_fe_split_from_apfu(out[i], phase, instance='all')
-                _fill("Fe2", split["Fe2"])
-                _fill("Fe3", split["Fe3"])
+                _fill("Fe2", split["Fe2"], i)
+                _fill("Fe3", split["Fe3"], i)
 
         return instances
 

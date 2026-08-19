@@ -1,9 +1,13 @@
-import numpy as np
 import warnings
+
+import numpy as np
 from scipy import optimize
+
+from phasetools import MAGEMin_C
+
 from ..core.base import MAGEMinBase
 from ..core.phase_properties import phase_frac
-from phasetools import MAGEMin_C
+
 
 class PhaseFunctions(MAGEMinBase):
     """Utility functions for phase stability and fractionation."""

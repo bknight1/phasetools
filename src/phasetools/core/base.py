@@ -1,9 +1,11 @@
-import numpy as np
-from juliacall import Main as jl, convert as jlconvert
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
 from molmass import Formula
+
 from phasetools import MAGEMin_C
 
 from ..utils.bulk_rock import convert_mol_percent_to_wt_percent, get_molar_mass_dict
+
 
 class MAGEMinBase:
     def __init__(self, db="ig", dataset=636, verbose=False):
@@ -27,7 +29,6 @@ class MAGEMinBase:
         other._stoich_map = self._stoich_map
 
     def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
-        from ..utils.bulk_rock import convert_mol_percent_to_wt_percent, get_molar_mass_dict
 
         # Store original inputs for later modification (e.g. in estimators)
         self.original_Xoxides = list(Xoxides)
@@ -72,7 +73,7 @@ class MAGEMinBase:
                         if ox not in self._stoich_map:
                             self._stoich_map[ox] = {}
                         self._stoich_map[ox][el] = float(df.loc[el, 'Count'])
-            except:
+            except (ValueError, KeyError, TypeError, AttributeError):
                 pass
 
     def _extract_fe_split_from_apfu(self, out, phase, instance=0):

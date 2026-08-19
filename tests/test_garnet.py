@@ -11,8 +11,9 @@ No live Julia runtime is needed -- all MAGEMin calls are mocked.
 """
 
 import unittest
-import numpy as np
 from unittest.mock import MagicMock, patch
+
+import numpy as np
 
 from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 
@@ -66,10 +67,12 @@ class TestGarnetFeBasis(unittest.TestCase):
 
     def test_invalid_basis_raises(self):
         """Unsupported fe_basis values must raise ValueError at construction."""
-        with patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
-                   return_value=None):
-            with self.assertRaises(ValueError):
-                MAGEMinGarnetCalculator(db='ig', fe_basis='Fe3')
+        with (
+            patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
+                  return_value=None),
+            self.assertRaises(ValueError),
+        ):
+            MAGEMinGarnetCalculator(db='ig', fe_basis='Fe3')
 
     def test_default_is_feot(self):
         """The default fe_basis is 'FeOt' (community convention)."""

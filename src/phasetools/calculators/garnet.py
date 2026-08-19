@@ -1,10 +1,15 @@
-import numpy as np
 import sys
-from .pt_grid import MAGEMinPTGridCalculator
-from ..core.phase_properties import phase_frac, extract_end_member, get_oxide_apfu
-from ..utils.bulk_rock import atomic_mass_dict, atomic_frac_to_wt_frac
+
+import numpy as np
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
+
 from phasetools import MAGEMin_C
-from juliacall import Main as jl, convert as jlconvert
+
+from ..core.phase_properties import get_oxide_apfu, phase_frac
+from ..utils.bulk_rock import atomic_frac_to_wt_frac, atomic_mass_dict
+from .pt_grid import MAGEMinPTGridCalculator
+
 
 class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
     """High-level wrappers for garnet-focused MAGEMin calculations."""
