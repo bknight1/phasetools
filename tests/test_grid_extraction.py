@@ -20,14 +20,19 @@ No live Julia runtime is needed -- ``out`` objects are mocked.
 
 import unittest
 import warnings
-import numpy as np
 from unittest.mock import MagicMock, patch
+
+import numpy as np
 
 from phasetools.calculators.pt_grid import MAGEMinPTGridCalculator
 from phasetools.core.phase_properties import (
-    get_oxide_apfu, get_phase_chemistry, extract_end_member,
-    get_phase_mg_number, get_phase_mg2_number, get_phase_fe_split,
     _phase_indices,
+    extract_end_member,
+    get_oxide_apfu,
+    get_phase_chemistry,
+    get_phase_fe_split,
+    get_phase_mg2_number,
+    get_phase_mg_number,
 )
 
 # mpe-style oxide ordering
@@ -105,7 +110,7 @@ class TestPhaseIndices(unittest.TestCase):
         self.assertEqual(_phase_indices(self.out, 'ep', 0), [])
 
     def test_invalid_instance_type_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(TypeError):
             _phase_indices(self.out, 'dio', 'first')
 
 

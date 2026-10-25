@@ -2,10 +2,19 @@
 
 ## Quick start
 
+**Conda / mamba (Linux & CI):**
+```bash
+mamba env create -f environment.yml
+conda activate phasetools
+phasetools-julia-setup --install
+phasetools-julia-setup --check
+```
+
+**pip + juliaup (cross-platform, incl. macOS):**
 ```bash
 python -m pip install -e .
-phasetools-julia-setup --check    # verify Julia + MAGEMin_C
 phasetools-julia-setup --install  # install MAGEMin_C in Julia
+phasetools-julia-setup --check    # verify Julia + MAGEMin_C
 python3 -m unittest discover tests   # run all tests (mock-based, no Julia needed)
 ```
 
@@ -282,9 +291,10 @@ The `ox.count("O")` bug undercounts oxygen, inflating the6-O scale factor by ~60
 - Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`.
 - New public functions must be documented in the **directory's README.md** (e.g., `calculators/README.md`, `core/README.md`) **and** the package structure above must be updated.
 
-## Requirements (from `setup.py`)
+## Requirements (from `pyproject.toml`)
 
 `pandas`, `numpy`, `matplotlib`, `scipy`, `molmass`, `juliacall`. Python ≥ 3.10.
+Extras: `[jupyter]` (jupyterlab, ipykernel, nbconvert), `[dev]` (ruff).
 
 ## Tutorials
 

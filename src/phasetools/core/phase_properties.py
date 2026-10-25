@@ -1,5 +1,6 @@
-import numpy as np
 import warnings
+
+import numpy as np
 
 
 def _phase_indices(out: object, phase: str, instance: int | str = 0) -> list[int]:
@@ -29,7 +30,7 @@ def _phase_indices(out: object, phase: str, instance: int | str = 0) -> list[int
     if instance == 'all':
         return idx
     if not isinstance(instance, (int, np.integer)):
-        raise ValueError(f"instance must be an integer index or 'all', got {instance!r}")
+        raise TypeError(f"instance must be an integer index or 'all', got {instance!r}")
     if not idx:
         return []
     if instance < 0:
@@ -178,7 +179,7 @@ def phase_frac(phase, MAGEMinOutput, sys_in):
         if not found:
             return 0.0
         return float(total)
-    except:
+    except (ValueError, IndexError, AttributeError, TypeError):
         return 0.0
 
 def get_phase_mg_number(out, ph, instance=0):
@@ -281,7 +282,7 @@ def get_phase_mg2_number(out: object, ph: str, instance: int | str = 0) -> float
         if instance != 'all':
             return float(mg / denominator) if denominator > 0 else 0.0
         return np.where(denominator > 0, mg / denominator, 0.0)
-    except Exception:
+    except (ValueError, IndexError, AttributeError, KeyError, TypeError):
         return 0.0
 
 def calculate_kd_fe_mg(out, phase1, phase2, use_fe2_only=False):

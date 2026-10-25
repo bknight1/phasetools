@@ -1,13 +1,13 @@
-import unittest
-import numpy as np
-from unittest.mock import MagicMock, patch
-
 # Mock MAGEMin_C before importing PhaseTools components that depend on it
 import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
 mock_magemin = MagicMock()
 sys.modules['phasetools.MAGEMin_C'] = mock_magemin
 
 from phasetools.core.base import MAGEMinBase
+
 
 class TestRedoxLogic(unittest.TestCase):
     def setUp(self):

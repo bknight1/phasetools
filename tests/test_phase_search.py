@@ -9,9 +9,9 @@ No live Julia runtime is needed — all MAGEMin calls are mocked.
 """
 
 import unittest
-import numpy as np
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Helpers

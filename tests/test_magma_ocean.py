@@ -1,5 +1,7 @@
 import unittest
+
 from phasetools.models.magma_ocean import MagmaOcean
+
 
 class TestLMOFix(unittest.TestCase):
     """
@@ -20,7 +22,7 @@ class TestLMOFix(unittest.TestCase):
         """Test the 10-stage fractional crystallisation path."""
         # Stage 0: Equilibrium (0-50 vol.%)
         # Using p_start=45.0 (core) to p_end=17.3 (approx. 50% volume radius)
-        results_0, melt_0 = self.mo.run_stage_0(p_start=45.0, p_end=17.3, solid_frac=0.5, p_intervals=5)
+        _, melt_0 = self.mo.run_stage_0(p_start=45.0, p_end=17.3, solid_frac=0.5, p_intervals=5)
 
         # Fractional Stages (Stages 1-10, 5% total LMO each)
         results_frac = self.mo.run_fractional_stages(melt_0, p_start=17.3, p_end=0.01, vol_step=0.05, n_stages=10)

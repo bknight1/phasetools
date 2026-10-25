@@ -1,0 +1,10 @@
+name: phasetools
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - julia
+  - pip
+  - pip:
+      - -e ".[jupyter,dev]"

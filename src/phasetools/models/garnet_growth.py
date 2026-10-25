@@ -1,10 +1,14 @@
-import numpy as np
+from typing import Any
+
 import matplotlib.pyplot as plt
+import numpy as np
+from juliacall import Main as jl
+from juliacall import convert as jlconvert
 from scipy.interpolate import interp1d
 from scipy.stats import norm
-from typing import Any
-from juliacall import Main as jl, convert as jlconvert
+
 from ..calculators.garnet import MAGEMinGarnetCalculator
+
 
 def generate_distribution(n_classes, r_min, dr, fnr, Gn, tGn):
     """
@@ -181,7 +185,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
                 raise ValueError("User-defined distribution must have length equal to garnet_classes")
             finp = user_dist
         else:
-            raise ValueError("size_dist must be a string ('N' or 'U') or a numeric array")
+            raise TypeError("size_dist must be a string ('N' or 'U') or a numeric array")
         return finp
 
     def _normalise_distribution(self, finp, r):
@@ -415,15 +419,15 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
         GVG = GVn[ind]
 
-        tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
+        tG, TG, PG, MnG, MgG, FeG, _CaG = self._slice_arrays(ind)
 
         # Generate radius classes and distributions
-        n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
+        n_classes, _r, dr, _finp, fnr = self._build_size_distribution(size_dist)
 
         Gn = GVG / np.max(GVG)
         tGn = tG
 
-        G, t_arr, r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tGn)
+        _G, t_arr, _r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tGn)
 
         # Interpolate physical properties along the garnet growth
         PGrw = self._interp(tG, PG, t_arr)
@@ -431,7 +435,6 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         Mnrw = self._interp(tG, MnG, t_arr)
         Mgrw = self._interp(tG, MgG, t_arr)
         Ferw = self._interp(tG, FeG, t_arr)
-        Carw = 1 - Mnrw - Mgrw - Ferw
 
         garnets = []
         for i in range(n_classes):
@@ -443,7 +446,6 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             Mnr1 = Mnrw[ind_range]
             Mgr1 = Mgrw[ind_range]
             Fer1 = Ferw[ind_range]
-            Car1 = 1 - Mnr1 - Mgr1 - Fer1
 
             dRr = Rr1[-1] / self.nR_diff
             Rrz = np.arange(dRr, Rr1[-1] + dRr, dRr)
@@ -501,7 +503,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
         GVG = GVn[ind]
 
-        tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
+        tG, TG, PG, MnG, MgG, FeG, _CaG = self._slice_arrays(ind)
 
         n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
 
@@ -509,7 +511,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         tGn = tG
 
         G, t_arr, r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tGn)
-        
+
         # Interpolate physical properties along garnet growth
         PGrw = self._interp(tG, PG, t_arr)
         TGrw = self._interp(tG, TG, t_arr)
@@ -621,7 +623,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         except IndexError:
             last_zero_idx = -1
         ind = np.arange(last_zero_idx+1, first_one_idx+1)
-        tG, TG, PG, MnG, MgG, FeG, CaG = self._slice_arrays(ind)
+        tG, TG, PG, MnG, MgG, FeG, _CaG = self._slice_arrays(ind)
         n_classes, r, dr, finp, fnr = self._build_size_distribution(size_dist)
         Gn = GVn[ind] / np.max(GVn[ind])
         G, t_arr, r_r, R = generate_distribution(n_classes, self.r_min, dr, fnr, Gn, tG)
