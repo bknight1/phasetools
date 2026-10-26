@@ -3,9 +3,9 @@ import shutil
 import subprocess
 import sys
 
-
 # MAGEMin_C's dependency stack relies on WeakRefStrings' legacy PosLen API;
-# newer releases can fail to import MAGEMin_C with `PosLen not defined`.
+# WeakRefStrings 1.4.3 requires Parsers 2.x and fails with Parsers 3.x.
+_PARSERS_VERSION = "2.8.3"
 _WEAKREFSTRINGS_VERSION = "1.4.3"
 
 
@@ -19,22 +19,35 @@ def check_julia_installed():
 
 
 def check_magemin_installed():
-    """Return True when Julia package MAGEMin_C can be imported."""
+    """Return True when MAGEMin_C loads through the phasetools Python bridge."""
     if not check_julia_installed():
         return False
-    result = _run_julia(["-e", 'using MAGEMin_C'])
+
+    bridge_check = (
+        "from phasetools import MAGEMin_C; "
+        "assert MAGEMin_C is not None; "
+        "assert callable(MAGEMin_C.Initialize_MAGEMin)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", bridge_check],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     return result.returncode == 0
 
 
 def install_magemin():
-    """Install MAGEMin_C and a compatible WeakRefStrings release."""
+    """Install MAGEMin_C with compatible Parsers and WeakRefStrings releases."""
     if not check_julia_installed():
         raise RuntimeError("Julia is not available on PATH.")
 
     setup = (
         "using Pkg; "
         'Pkg.add([PackageSpec(name="MAGEMin_C"), '
+        f'PackageSpec(name="Parsers", version="{_PARSERS_VERSION}"), '
         f'PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}")]); '
+        f'Pkg.pin(PackageSpec(name="Parsers", version="{_PARSERS_VERSION}")); '
         f'Pkg.pin(PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}"))'
     )
     result = _run_julia(["-e", setup])
