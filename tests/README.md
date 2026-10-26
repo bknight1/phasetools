@@ -68,6 +68,21 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 
 ---
 
+## `test_incomplete_bulk.py`
+
+**What this file proves:** An empty `rm_list` skips MAGEMin phase removal and clears stale removal state; a non-empty list is passed to MAGEMin unchanged.
+
+## Kho-aware MDF cation tests
+
+`test_garnet_mdf.py` checks kho-aware exchange projections, closed
+Mg-Fe(total)-Mn-Ca cation proportions, active-model validation, wrapper state,
+and grid scan diagnostics without requiring Julia. The paired
+`test_garnet_mdf_live.py` checks MAGEMin-backed MDF and equilibrium
+outputs, including kho chemical-potential normalisation and Gamma projection
+on a shared formula basis when Julia + MAGEMin_C are available.
+
+---
+
 ## `test_magma_ocean.py` (live — requires Julia + MAGEMin_C)
 
 **What this file proves:** The `MagmaOcean` model's crystallisation path — equilibrium stage 0 followed by fractional stages 1–N — reproduces expected lunar magma ocean (LMO) behaviour.

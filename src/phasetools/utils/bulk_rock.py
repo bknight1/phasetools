@@ -33,8 +33,16 @@ def get_atomic_mass_dict():
     return atomic_mass_dict
 
 def convert_oxide_to_element_moles(oxide_moles, oxide, element):
-    molar_mass_dict = get_molar_mass_dict()
-    return oxide_moles * (molar_mass_dict[element] / molar_mass_dict[oxide])
+    """Convert oxide moles to moles of a specified constituent element.
+
+    The element's stoichiometric count in the oxide formula is included, so
+    one mole of Fe2O3 yields two moles of Fe atoms.
+    """
+    composition = Formula(oxide).composition()
+    if element not in composition:
+        raise ValueError(f"Element {element!r} is not present in oxide {oxide!r}")
+    element_count = composition[element].count
+    return oxide_moles * element_count
 
 def convert_mol_percent_to_wt_percent(mol_percents, components, mass_dict):
     """Generic conversion from mole percent to weight (mass) percent."""

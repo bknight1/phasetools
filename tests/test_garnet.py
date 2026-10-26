@@ -16,6 +16,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from phasetools.calculators.garnet import MAGEMinGarnetCalculator
+from phasetools.calculators.garnet_composition import (
+    garnet_cations_from_apfu,
+    normalise_fe_basis,
+    normalise_garnet_cations,
+)
 
 
 class TestGarnetFeBasis(unittest.TestCase):
@@ -32,7 +37,10 @@ class TestGarnetFeBasis(unittest.TestCase):
         out = MagicMock()
         out.ph = ['g', 'q']
         apfu = {'MgO': 0.6, 'MnO': 0.1, 'CaO': 0.8, 'FeO': 1.2, 'Fe2O3': 0.15}
-        with patch('phasetools.calculators.garnet.get_oxide_apfu', return_value=apfu):
+        with patch(
+            'phasetools.calculators.garnet_composition.get_oxide_apfu',
+            return_value=apfu,
+        ):
             Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
         fe_total = 1.2 + 2.0 * 0.15
         total = 0.6 + 0.1 + 0.8 + fe_total
@@ -49,8 +57,16 @@ class TestGarnetFeBasis(unittest.TestCase):
         out.ph = ['g', 'q']
         apfu = {'MgO': 0.6, 'MnO': 0.1, 'CaO': 0.8}
         split = {'Fe2': 1.35, 'Fe3': 0.15}
-        with patch('phasetools.calculators.garnet.get_oxide_apfu', return_value=apfu), \
-             patch.object(calc, '_extract_fe_split_from_apfu', return_value=split):
+        with (
+            patch(
+                'phasetools.calculators.garnet_composition.get_oxide_apfu',
+                return_value=apfu,
+            ),
+            patch(
+                'phasetools.calculators.garnet_composition.get_phase_fe_split',
+                return_value=split,
+            ),
+        ):
             Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
         total = 0.6 + 0.1 + 0.8 + 1.35
         self.assertAlmostEqual(Fe, 1.35 / total, places=6)
@@ -84,6 +100,83 @@ class TestGarnetFeBasis(unittest.TestCase):
             self.assertEqual(calc.fe_basis, 'fe2+')
             calc = MAGEMinGarnetCalculator(db='ig', fe_basis='feot')
             self.assertEqual(calc.fe_basis, 'feot')
+
+    def test_wt_output_conversion_preserves_public_tuple_order(self):
+        calc = self._make_calc('feot')
+        out = MagicMock()
+        out.ph = ['g']
+        atomic = {'Mg': 0.1, 'Fe': 0.2, 'Mn': 0.3, 'Ca': 0.4}
+        weight = {'Mg': 0.4, 'Fe': 0.3, 'Mn': 0.2, 'Ca': 0.1}
+        with (
+            patch(
+                'phasetools.calculators.garnet.garnet_cations_from_apfu',
+                return_value=atomic,
+            ),
+            patch(
+                'phasetools.calculators.garnet.atomic_frac_to_wt_frac',
+                return_value=weight,
+            ) as convert,
+        ):
+            values = calc._extract_garnet_elements_from_oxides(out, 'wt')
+        convert.assert_called_once()
+        self.assertEqual(convert.call_args.args[0], atomic)
+        self.assertEqual(values, (0.4, 0.2, 0.3, 0.1))
+
+
+class TestSharedGarnetComposition(unittest.TestCase):
+    def test_normaliser_returns_fixed_atomic_cation_order_and_closure(self):
+        result = normalise_garnet_cations({'Mg': 3.0, 'Fe': 2.0, 'Ca': 1.0})
+        self.assertEqual(tuple(result), ('Mg', 'Fe', 'Mn', 'Ca'))
+        self.assertEqual(
+            result,
+            {'Mg': 0.5, 'Fe': 1.0 / 3.0, 'Mn': 0.0, 'Ca': 1.0 / 6.0},
+        )
+        self.assertAlmostEqual(sum(result.values()), 1.0)
+
+    def test_normaliser_handles_absent_cations_and_rejects_invalid_amounts(self):
+        self.assertEqual(
+            normalise_garnet_cations({}, absent='zero'),
+            {'Mg': 0.0, 'Fe': 0.0, 'Mn': 0.0, 'Ca': 0.0},
+        )
+        with self.assertRaisesRegex(ValueError, 'no positive'):
+            normalise_garnet_cations({})
+        with self.assertRaisesRegex(ValueError, 'finite and non-negative'):
+            normalise_garnet_cations({'Mg': np.nan})
+
+    def test_apfu_projection_uses_both_supported_iron_bases(self):
+        out = MagicMock()
+        out.ph = ['g']
+        apfu = {'MgO': 0.6, 'FeO': 0.8, 'Fe2O3': 0.2, 'MnO': 0.1, 'CaO': 0.3}
+        split = {'Fe2': 0.9, 'Fe3': 0.3}
+        with (
+            patch(
+                'phasetools.calculators.garnet_composition.get_oxide_apfu',
+                return_value=apfu,
+            ),
+            patch(
+                'phasetools.calculators.garnet_composition.get_phase_fe_split',
+                return_value=split,
+            ),
+        ):
+            feot = garnet_cations_from_apfu(out)
+            fe2 = garnet_cations_from_apfu(out, 'fE2')
+        self.assertAlmostEqual(feot['Fe'], 1.2 / 2.2)
+        self.assertAlmostEqual(fe2['Fe'], 0.9 / 1.9)
+        self.assertAlmostEqual(sum(feot.values()), 1.0)
+        self.assertAlmostEqual(sum(fe2.values()), 1.0)
+
+    def test_apfu_projection_absence_and_fe_basis_validation(self):
+        out = MagicMock()
+        out.ph = ['q']
+        self.assertEqual(
+            garnet_cations_from_apfu(out, absent='zero'),
+            {'Mg': 0.0, 'Fe': 0.0, 'Mn': 0.0, 'Ca': 0.0},
+        )
+        with self.assertRaisesRegex(ValueError, "garnet \\('g'\\) is absent"):
+            garnet_cations_from_apfu(out)
+        self.assertEqual(normalise_fe_basis('fe2'), 'Fe2+')
+        with self.assertRaisesRegex(ValueError, 'fe_basis must be'):
+            normalise_fe_basis('Fe3+')
 
 
 # ===========================================================================

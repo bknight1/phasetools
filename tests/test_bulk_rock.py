@@ -5,6 +5,7 @@ import numpy as np
 from phasetools.utils.bulk_rock import (
     get_atomic_mass_dict,
     get_molar_mass_dict,
+    convert_oxide_to_element_moles,
     mol_fractions_to_wt_fractions,
     wt_fractions_to_mol_fractions,
 )
@@ -15,6 +16,14 @@ class TestFractionConverters(unittest.TestCase):
 
     def setUp(self):
         self.mass_dict = get_molar_mass_dict()
+
+    def test_oxide_to_element_moles_includes_formula_stoichiometry(self):
+        self.assertAlmostEqual(
+            convert_oxide_to_element_moles(1.5, "Fe2O3", "Fe"), 3.0
+        )
+        self.assertAlmostEqual(
+            convert_oxide_to_element_moles(1.5, "SiO2", "Si"), 1.5
+        )
 
     # ------------------------------------------------------------------ #
     # Scalar behaviour

@@ -6,8 +6,9 @@ from juliacall import convert as jlconvert
 
 from phasetools import MAGEMin_C
 
-from ..core.phase_properties import get_oxide_apfu, phase_frac
+from ..core.phase_properties import phase_frac
 from ..utils.bulk_rock import atomic_frac_to_wt_frac, atomic_mass_dict
+from .garnet_composition import garnet_cations_from_apfu, normalise_fe_basis
 from .pt_grid import MAGEMinPTGridCalculator
 
 
@@ -27,14 +28,15 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
         verbose : bool, default=False
             Whether to print progress information.
         fe_basis : str, default="FeOt"
-            Iron basis used for garnet X-site fractions:
+            Iron basis used for closed Mg-Mn-Fe-Ca garnet cation proportions:
 
             * ``'FeOt'`` -- all iron treated as Fe2+ (total iron,
-              ``FeO + 2*Fe2O3`` APFU) placed on the divalent site.  This is
-              the standard community convention for garnet end-members and
-              X-site fractions (e.g. Williams & Grambling 1990; Krogh Ravna
-              2000) and is consistent with the pyralspite garnet model used
-              by MAGEMin and Holland-Powell-type databases.
+              ``FeO + 2*Fe2O3`` APFU) included in the closed cation total.
+              This is the standard community convention for garnet
+              end-members (e.g. Williams & Grambling 1990; Krogh Ravna 2000).
+              When ferric kho is present, its two Fe atoms are included even
+              though they occupy the Y site, so the result is not strictly an
+              X-site normalisation.
             * ``'Fe2+'`` -- only the stoichiometrically estimated ferrous
               iron (``_extract_fe_split_from_apfu``) is placed on the
               divalent site, excluding Fe3+.  Use only when garnet Fe3+ is
@@ -45,49 +47,26 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
             Case-insensitive.
         """
         super().__init__(db, dataset, verbose)
-        basis = str(fe_basis).casefold()
-        if basis not in ("feot", "fe2+", "fe2"):
-            raise ValueError(f"fe_basis must be 'FeOt' or 'Fe2+', got {fe_basis!r}")
-        self.fe_basis = "fe2+" if basis.startswith("fe2") else "feot"
+        self.fe_basis = normalise_fe_basis(fe_basis).casefold()
 
     def _extract_garnet_elements_from_oxides(self, out, sys_in):
         """
-        Extract garnet Mg-Mn-Fe-Ca cation fractions for the divalent (X) site.
+        Extract closed garnet Mg-Mn-Fe-Ca cation proportions.
 
         The Fe basis is controlled by ``self.fe_basis``:
 
         * ``'feot'`` (default) -- all iron treated as Fe2+ (total iron,
-          ``FeO + 2*Fe2O3`` APFU) placed on the divalent site.  The standard
-          community convention for garnet X-site fractions.
+          ``FeO + 2*Fe2O3`` APFU) in the closed cation total. This follows
+          the community convention for garnet end-members. If ferric kho is
+          present, its two Y-site Fe atoms are included, so the result is not
+          strictly an X-site normalisation.
         * ``'fe2+'`` -- only the stoichiometrically estimated ferrous iron
           is placed on the divalent site, excluding Fe3+.
         """
-        if 'g' not in out.ph:
-            return 0.0, 0.0, 0.0, 0.0
-
-        if self.fe_basis == 'feot':
-            # Total iron on the divalent site (all Fe as Fe2+)
-            elements = get_oxide_apfu(out, 'g', ['MgO', 'MnO', 'CaO', 'FeO', 'Fe2O3'])
-            fe_moles = elements.get("FeO", 0.0) + 2.0 * elements.get("Fe2O3", 0.0)
-        else:
-            # Ferrous iron only, from the excess-oxygen Fe2+/Fe3+ split
-            elements = get_oxide_apfu(out, 'g', ['MgO', 'MnO', 'CaO'])
-            fe_moles = self._extract_fe_split_from_apfu(out, 'g')['Fe2']
-
-        mg_moles = elements.get("MgO", 0.0)
-        mn_moles = elements.get("MnO", 0.0)
-        ca_moles = elements.get("CaO", 0.0)
-
-        # Total atoms in the X-site (should be approx 3.0)
-        total_x_site_moles = mg_moles + mn_moles + fe_moles + ca_moles
-        if total_x_site_moles <= 0:
-            return 0.0, 0.0, 0.0, 0.0
-
-        # Normalise to 1.0 (mole fractions of the divalent site)
-        Mg = mg_moles / total_x_site_moles
-        Mn = mn_moles / total_x_site_moles
-        Fe = fe_moles / total_x_site_moles
-        Ca = ca_moles / total_x_site_moles
+        proportions = garnet_cations_from_apfu(
+            out, fe_basis=self.fe_basis, absent="zero"
+        )
+        Mg, Fe, Mn, Ca = (proportions[key] for key in ("Mg", "Fe", "Mn", "Ca"))
 
         if sys_in.casefold() == 'wt':
             wt_frac = atomic_frac_to_wt_frac(
@@ -210,15 +189,16 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
         gt_vol_frac : numpy.ndarray
             Garnet volume fraction at each P-T point.
         Mgi : numpy.ndarray
-            Garnet X-site Mg fraction at each P-T point.
+            Closed Mg-Fe-Mn-Ca cation proportion for Mg at each P-T point.
         Mni : numpy.ndarray
-            Garnet X-site Mn fraction at each P-T point.
+            Closed Mg-Fe-Mn-Ca cation proportion for Mn at each P-T point.
         Fei : numpy.ndarray
-            Garnet X-site Fe fraction at each P-T point.  The Fe basis
-            (total Fe as Fe2+ by default, or ferrous-only) is set by the
-            ``fe_basis`` argument passed to :meth:`__init__`.
+            Closed Mg-Fe-Mn-Ca cation proportion for Fe at each P-T point.
+            The basis is set by ``fe_basis``; ``FeOt`` includes ferric kho Fe
+            on the Y site, so these proportions are not necessarily X-site
+            occupancies.
         Cai : numpy.ndarray
-            Garnet X-site Ca fraction at each P-T point.
+            Closed Mg-Fe-Mn-Ca cation proportion for Ca at each P-T point.
         X_along_path : numpy.ndarray
             Bulk composition after each step's fractionation.  Each row is
             normalised to sum to 1.  Row ``i`` is the bulk **after** step

@@ -4,6 +4,11 @@ import subprocess
 import sys
 
 
+# MAGEMin_C's dependency stack relies on WeakRefStrings' legacy PosLen API;
+# newer releases can fail to import MAGEMin_C with `PosLen not defined`.
+_WEAKREFSTRINGS_VERSION = "1.4.3"
+
+
 def _run_julia(args):
     return subprocess.run(["julia", *args], capture_output=True, text=True, check=False)
 
@@ -22,12 +27,27 @@ def check_magemin_installed():
 
 
 def install_magemin():
-    """Install MAGEMin_C using Julia's package manager."""
+    """Install MAGEMin_C and a compatible WeakRefStrings release."""
     if not check_julia_installed():
         raise RuntimeError("Julia is not available on PATH.")
-    result = _run_julia(["-e", 'using Pkg; Pkg.add("MAGEMin_C")'])
+
+    setup = (
+        "using Pkg; "
+        'Pkg.add([PackageSpec(name="MAGEMin_C"), '
+        f'PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}")]); '
+        f'Pkg.pin(PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}"))'
+    )
+    result = _run_julia(["-e", setup])
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "Julia package installation failed.")
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(details or "Julia package installation failed.")
+
+    # Pkg can return successfully while reporting a dependency precompile
+    # failure. Verify the actual package import in a fresh Julia process.
+    result = _run_julia(["-e", "using MAGEMin_C"])
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(details or "MAGEMin_C could not be loaded after installation.")
 
 
 def print_status():

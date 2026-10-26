@@ -26,6 +26,7 @@ class MAGEMinBase:
         other.sys_in = self.sys_in
         other.rm_list = self.rm_list
         other._Xoxides_py = self._Xoxides_py
+        other._X_mol_standardized = self._X_mol_standardized
         other._stoich_map = self._stoich_map
 
     def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
@@ -45,6 +46,9 @@ class MAGEMinBase:
         # Convert back to Python lists for processing
         self._Xoxides_py = [str(ox) for ox in Xox_std_jl]
         X_mol = [float(val) for val in X_std_jl]
+        # Retain MAGEMin's standardised molar basis even when the calculator's
+        # configured input is subsequently converted back to weight percent.
+        self._X_mol_standardized = tuple(X_mol)
 
         # 2. If sys_in is wt, convert the standardised molar fractions back to wt%
         if sys_in.casefold() == 'wt':
@@ -59,8 +63,11 @@ class MAGEMinBase:
         self.Xoxides = Xox_std_jl
 
         if rm_list is not None:
-            rm_j = jlconvert(jl.Vector[jl.String], rm_list)
-            self.rm_list = MAGEMin_C.remove_phases(rm_j, self.db)
+            if rm_list:
+                rm_j = jlconvert(jl.Vector[jl.String], rm_list)
+                self.rm_list = MAGEMin_C.remove_phases(rm_j, self.db)
+            else:
+                self.rm_list = None
 
         # 3. Pre-calculate stoichiometry using molmass for the standardised oxides
         self._stoich_map = {}

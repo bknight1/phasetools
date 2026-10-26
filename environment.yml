@@ -4,7 +4,7 @@ channels:
   - nodefaults
 dependencies:
   - python=3.11
-  - julia
+  - julia=1.10
   - pip
   - pip:
       - -e ".[jupyter,dev]"

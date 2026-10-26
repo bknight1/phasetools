@@ -26,7 +26,8 @@ src/phasetools/
   julia_setup.py     — CLI for phasetools-julia-setup (check/install Julia + MAGEMin_C)
   core/
     base.py          — MAGEMinBase (parent class for all calculators/models)
-    engine.py        — single_point_minimization_with_conversion (Python→Julia bridge)
+    engine.py        — Python→Julia bridge and generic solution-phase Gibbs evaluation
+    thermodynamics.py — generic extraction of MAGEMin thermodynamic diagnostics
     phase_properties.py  — phase_frac, extract_end_member, get_oxide_apfu,
                            get_phase_chemistry, get_phase_mg_number,
                            get_phase_mg2_number, get_phase_fe_split,
@@ -35,8 +36,9 @@ src/phasetools/
     pt_grid.py       — MAGEMinPTGridCalculator (multi-point P-T grids)
     garnet.py        — MAGEMinGarnetCalculator (garnet-focused wrappers)
     phase_search.py  — PhaseFunctions (solidus/liquidus root-finding)
-    pt_estimation.py — PhasePTEstimator (geothermobarometry)
+    pt_estimation.py — PhasePTEstimator (geothermobarometry) and shared optimize_pt()
     assemblage.py    — MAGEMinAssemblageCalculator (stability masks)
+    garnet_mdf.py   — GarnetMDFCalculator and closed Mg-Fe(total)-Mn-Ca cation output
   models/
     garnet_growth.py — GarnetGenerator, generate_distribution
     magma_ocean.py   — MagmaOcean
@@ -47,6 +49,9 @@ src/phasetools/
                        split_feot_to_feo_o / express_bulk_in_feo_o_basis
                        (FeOt→FeO+O split at a target Fe³⁺/FeOt, conserving FeOt)
     general.py       — PCHIP interpolation helpers
+
+Tutorials/Garnet/
+  MDF_single_point_workflow.py — single-point equilibrium and garnet MDF/PTM (jupytext paired)
 ```
 
 ## Conventions (must follow)
