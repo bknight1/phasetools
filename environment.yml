@@ -5,6 +5,7 @@ channels:
 dependencies:
   - python=3.11
   - julia=1.10
+  - libcurl<8.10
   - pip
   - pip:
       - -e ".[jupyter,dev]"
