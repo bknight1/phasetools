@@ -238,22 +238,32 @@ class TestSiteOccupancy(unittest.TestCase):
         self.assertAlmostEqual(fe2_h + fe3_h, fe_total, places=2)
 
     def test_chlorite_heuristic(self):
-        """Heuristic Fe2+/Fe3+ for chlorite (not stable for this bulk composition).
+        """Heuristic Fe2+/Fe3+ for chlorite on a chlorite-saturating bulk.
 
-        Chlorite is not stable at any P-T for the eclogite S10 bulk in mpe.
-        This test is kept for completeness but will always skip.
+        The class-wide eclogite S10 bulk never stabilises chlorite, so this
+        test brings its own metapelite bulk (wt%) where chlorite is stable
+        at greenschist-facies conditions (5 kbar, 450 °C).
         """
-        out = self.calc.calculate_grid(5.0, 450.0)[0]
-        if "chl" not in out.ph:
-            self.skipTest("Chlorite not stable at 5 kbar, 450°C")
+        oxides = ["SiO2", "Al2O3", "MgO", "FeO", "CaO", "Na2O", "K2O", "H2O", "TiO2", "MnO", "O"]
+        bulk = [60.0, 18.0, 4.0, 7.0, 4.5, 2.5, 2.5, 1.5, 0.8, 0.1, 0.0]
+        calc = MAGEMinPTGridCalculator(db="mpe", dataset=636)
+        try:
+            calc.setup_bulk_composition(oxides, bulk, sys_in="wt")
+            out = calc.calculate_grid(5.0, 450.0)[0]
+            if "chl" not in out.ph:
+                self.skipTest(
+                    "Chlorite not stable at 5 kbar, 450 °C with the metapelite test bulk"
+                )
 
-        split = self.calc._extract_fe_split_from_apfu(out, "chl")
-        fe2_h, fe3_h = split["Fe2"], split["Fe3"]
+            split = calc._extract_fe_split_from_apfu(out, "chl")
+            fe2_h, fe3_h = split["Fe2"], split["Fe3"]
 
-        ph_idx = out.ph.index("chl")
-        ox_names = [str(o) for o in out.oxides]
-        fe_total = float(out.SS_vec[ph_idx].Comp_apfu[ox_names.index("FeO")])
-        self.assertAlmostEqual(fe2_h + fe3_h, fe_total, places=2)
+            ph_idx = out.ph.index("chl")
+            ox_names = [str(o) for o in out.oxides]
+            fe_total = float(out.SS_vec[ph_idx].Comp_apfu[ox_names.index("FeO")])
+            self.assertAlmostEqual(fe2_h + fe3_h, fe_total, places=2)
+        finally:
+            calc.finalize()
 
     def test_bulk_fe_o_closure(self):
         """Bulk Fe and O are conserved across the assemblage (mass balance)."""
