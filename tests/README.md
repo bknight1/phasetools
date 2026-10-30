@@ -40,7 +40,36 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 - **Full-fraction removal:** Each garnet-bearing step removes its *entire* current mode (minus the retained seed baseline when `normalise_start=True`), not a step-to-step or record-breaking increment. The discriminator: with a seed the second removal is `g₂ − seed`, where the old running-max scheme would give `g₂ − g₁`.
 - **Seed rules:** `normalise_start=True` retains the first-point garnet in the reactive bulk (never removed, not counted in the pile); `normalise_start=False` strips it at step 0 so every later step removes its full fraction.
 - **Cumulative pile per basis:** returned `gt_mol/wt/vol_frac` under fractionation are the monotone segregated pile as fractions of the original system, with each removal converted between mol/wt/vol via that step's equilibrium mode ratios; `pile[i] == 1 − Π(1 − f_k)` is checked independently.
-- **`fractionate=False` unchanged:** equilibrium modes are returned and the fractionation helper is never constructed.
+- **`fractionate=False` unchanged:** equilibrium modes are returned and `fractionate_phase` is never called.
+
+---
+
+## `test_gt_along_path_mdf.py`
+
+**What this file proves:** `gt_along_path(mdf=True)` correctly integrates the MDF/PTM growth model — state-shared helper, per-step MDF composition for reporting and segregation, supply-capped removals — without changing the `mdf=False` behaviour.
+
+### Key tests
+
+- **State sharing:** the `GarnetMDFCalculator` helper is constructed once, receives `_copy_state_to`, and is reused across runs; `mdf=False` never touches it.
+- **Cation reporting:** reported Mg-Mn-Fe-Ca come from `result.mdf` (atomic proportions, converted for `sys_in='wt'` to mirror the equilibrium path).
+- **Segregated composition:** `fractionate_phase` receives `phase_comp = mdf_oxide_wt` for `'wt'` and a unit-sum molar conversion for `'mol'`, while `frac_amount` stays the equilibrium mode.
+- **Supply cap:** when the MDF composition demands more of an oxide than the bulk holds (MnO typically limiting), the removal amount is scaled down (warning) and the bulk never goes negative.
+- **Absent garnet / robustness:** garnet-absent steps skip the MDF solve; all-zero cations on a wt basis return zeros instead of dividing by zero.
+- **Non-convergence policy:** a failed MDF solve warns and its composition is used.
+- **Forwarding:** `GarnetGenerator.generate_garnet_data(mdf=True)` passes the flag through.
+
+---
+
+## `test_state.py`
+
+**What this file proves:** MAGEMin handle ownership rules — `_copy_state_to` shares the C-side `data` handle without leaking it, and `finalize()` frees it exactly once on the owning instance.
+
+### Key tests
+
+- **State copy:** `_copy_state_to` transfers `db`/`dataset`/`verbose` alongside the standardised state and marks the target a non-owner (`_owns_data = False`).
+- **Construct-then-copy does not leak:** if the target owned a *different* handle, `_copy_state_to` finalises it (the orphaned ~40 MB C allocation is freed, not leaked).
+- **Owner finalises once:** `finalize()` calls `Finalize_MAGEMin` exactly once and is idempotent on subsequent calls.
+- **Non-owner is protected:** `finalize()` on a shared-handle instance warns and does not free the handle — the owner must finalise instead.
 
 ---
 

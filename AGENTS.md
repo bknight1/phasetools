@@ -74,7 +74,7 @@ from juliacall import Main as jl, convert as jlconvert
 - **Avoid double-converting** objects already in Julia format — verify the `juliacall` wrapper.
 - Initialise once and **reuse the `data` handle**:
   `data = MAGEMin_C.Initialize_MAGEMin("ig", verbose=False)`
-- Share state across instances: `self._copy_state_to(other)` transfers standardised Julia objects.
+- Share state across instances: `self._copy_state_to(other)` transfers standardised Julia objects plus `db`/`dataset`/`verbose`; `other` becomes a non-owner of the shared handle. Call `finalize()` on the **owning** instance when finished — Julia GC never frees the ~40 MB C-side MAGEMin allocation. Non-owners warn and skip `finalize()`.
 
 ## Databases
 
@@ -95,6 +95,16 @@ from juliacall import Main as jl, convert as jlconvert
 - **`mpe`**: mp + mb (cross-lithology metapelite)
 - **`mbe`**: mb + high-pressure models
 - **`ume`**: um + mb (mantle-crust interactions)
+
+### Database references
+
+- **Metapelite (mp/mpe):** White et al. (2014), *J. Metamorph. Geol.*, 32, 261-286.
+- **Metabasite (mb/mbe):** Green et al. (2016), *J. Metamorph. Geol.*, 34, 845-869.
+- **Ultramafic (um/ume):** Evans & Frost (2021), *J. Petrol.*, 62(3), egab016.
+- **Igneous (ig):** Green et al. (2025), *J. Petrol.*, 66, egae079.
+- **Igneous Alkaline (igad):** Weller et al. (2024), *J. Petrol.*, 65, egae098.
+- **Mantle (mtl):** Holland et al. (2013), *J. Petrol.*, 54, 1901-1920.
+- **Mantle (sb11/21/24):** Stixrude & Lithgow-Bertelloni (2011/2021/2024), *Geophys. J. Int.*
 
 ### Applicability warning
 
@@ -206,7 +216,7 @@ Since endmembers are just oxide arrays in the database, APFU already encodes the
 ## Calculator API patterns
 
 - **PTGrid**: `calculate_grid(P, T)` → `extract_from_grid(phase, end_members='auto')`
-- **Garnet**: `gt_along_path(P, T, fractionate=True)` for evolution with zoning; X-site normalisation isolates Fe²⁺.
+- **Garnet**: `gt_along_path(P, T, fractionate=True, mdf=True)` for evolution with zoning; `mdf=True` reports/segregates the maximum-driving-force composition (amounts stay equilibrium) with supply-capping and non-convergence warnings; X-site normalisation isolates Fe²⁺.
 - **PTEstimator**: wraps `scipy.optimize` (global: `differential_evolution`, `dual_annealing`; local: `shgo`, `minimize`).
 - **Assemblage**: returns boolean stability masks for requested phase coexistence.
 - **PhaseSearch**: uses `scipy.optimize.root_scalar` with P,T brackets for solidus/liquidus.
@@ -293,7 +303,7 @@ The `ox.count("O")` bug undercounts oxygen, inflating the6-O scale factor by ~60
 
 - **unittest**, mock-based (`unittest.mock.patch`), **no live Julia runtime** needed.
 - Run: `python3 -m unittest discover tests`
-- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`.
+- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_gt_along_path_mdf.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`, `test_state.py`.
 - New public functions must be documented in the **directory's README.md** (e.g., `calculators/README.md`, `core/README.md`) **and** the package structure above must be updated.
 
 ## Requirements (from `pyproject.toml`)
