@@ -34,11 +34,13 @@ src/phasetools/
                            calculate_kd_fe_mg
   calculators/
     pt_grid.py       — MAGEMinPTGridCalculator (multi-point P-T grids)
-    garnet.py        — MAGEMinGarnetCalculator (garnet-focused wrappers)
+    garnet/          — garnet domain package
+      calculator.py    — MAGEMinGarnetCalculator (garnet-focused wrappers, gt_along_path)
+      mdf.py           — GarnetMDFCalculator and closed Mg-Fe(total)-Mn-Ca cation output
+      composition.py   — cation conversions, closed projections, MDF endmember/oxide mixing
     phase_search.py  — PhaseFunctions (solidus/liquidus root-finding)
     pt_estimation.py — PhasePTEstimator (geothermobarometry) and shared optimize_pt()
     assemblage.py    — MAGEMinAssemblageCalculator (stability masks)
-    garnet_mdf.py   — GarnetMDFCalculator and closed Mg-Fe(total)-Mn-Ca cation output
   models/
     garnet_growth.py — GarnetGenerator, generate_distribution
     magma_ocean.py   — MagmaOcean
@@ -51,7 +53,7 @@ src/phasetools/
     general.py       — PCHIP interpolation helpers
 
 Tutorials/Garnet/
-  MDF_single_point_workflow.py — single-point equilibrium and garnet MDF/PTM (jupytext paired)
+  MDF_single_point_workflow.ipynb — single-point equilibrium and garnet MDF/PTM workflow
 ```
 
 ## Conventions (must follow)
@@ -303,7 +305,7 @@ The `ox.count("O")` bug undercounts oxygen, inflating the6-O scale factor by ~60
 
 - **unittest**, mock-based (`unittest.mock.patch`), **no live Julia runtime** needed.
 - Run: `python3 -m unittest discover tests`
-- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_gt_along_path_mdf.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`, `test_state.py`.
+- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fractionation.py`, `test_gt_along_path_mdf.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`, `test_state.py` (plus phase/feature files documented in `tests/README.md`).
 - New public functions must be documented in the **directory's README.md** (e.g., `calculators/README.md`, `core/README.md`) **and** the package structure above must be updated.
 
 ## Requirements (from `pyproject.toml`)

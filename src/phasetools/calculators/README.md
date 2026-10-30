@@ -9,7 +9,7 @@ generation, phase searching, geothermobarometry and garnet MDF calculations.
 - **`MAGEMinPTGridCalculator`** calculates properties over pressure-temperature
   grids and extracts endmembers, cations, and oxides.
 
-### `garnet.py`
+### `garnet/calculator.py` (package `garnet/`)
 - **`MAGEMinGarnetCalculator`** extracts garnet chemistry and models garnet
   evolution along P–T paths, optionally with fractionation.
 - `gt_along_path(P, T, fractionate=..., normalise_start=..., mdf=...)` drives
@@ -21,7 +21,7 @@ generation, phase searching, geothermobarometry and garnet MDF calculations.
   capped), and non-converged MDF solves warn and are used anyway.
 - Growth cation outputs keep their historical `(Mg, Mn, Fe, Ca)` tuple (and
   optional weight conversion). Growth/APFU and MDF endmember projections share
-  the atomic cation normaliser in `garnet_composition.py`; closed proportions
+  the atomic cation normaliser in `garnet/composition.py`; closed proportions
   are not APFU or site occupancies. In particular, `FeOt` includes ferric Fe
   assigned to kho's Y site, not only divalent X-site Fe.
 
@@ -40,7 +40,7 @@ generation, phase searching, geothermobarometry and garnet MDF calculations.
 - **`PhaseFunctions`** uses root finding to locate phase boundaries and phase
   appearance or disappearance conditions.
 
-### `garnet_mdf.py`
+### `garnet/mdf.py`
 - **`GarnetMDFCalculator`** discovers the active garnet endmembers from
   garnet-stable equilibrium and dispatches from standardised molar bulk O.
   Configure bulk once with `setup_bulk_composition(oxides, values,
@@ -97,10 +97,19 @@ the standardised molar O actually sent to MAGEMin, not the raw input scale or
 the unit-converted `self.X`. Internal
 thermodynamic garnet fractions are molar; public closed cation proportions are
 independent of the bulk basis. The supported tutorial is
-`Tutorials/Garnet/MDF_single_point_workflow.py` and its paired notebook.
+`Tutorials/Garnet/MDF_single_point_workflow.ipynb`.
 
 This calculator implements the garnet maximum-driving-force (MDF) workflow,
 also described as the parallel-tangent method/model (PTM).
 References: [10.1007/s00410-014-1059-6](https://doi.org/10.1007/s00410-014-1059-6),
 [10.1016/j.chemgeo.2018.05.019](https://doi.org/10.1016/j.chemgeo.2018.05.019),
 and [10.1016/j.chemgeo.2019.119323](https://doi.org/10.1016/j.chemgeo.2019.119323).
+
+### `garnet/composition.py`
+- Shared garnet composition maths used by both calculators: `normalise_fe_basis`,
+  `garnet_cations_from_apfu` and `normalise_garnet_cations` (the closed
+  four-cation projection both routes funnel through), plus the MDF projection
+  helpers `garnet_fractions_to_mg_fe_mn_ca`, `garnet_endmember_fractions_to_oxide_wt`
+  and `kho_aware_exchange_potentials`.
+- The package `__init__` re-exports the public names, so
+  `from phasetools.calculators.garnet import ...` keeps working.
