@@ -132,8 +132,15 @@ class TestGarnetMDFLive(unittest.TestCase):
         mu = dict(zip(names, evaluated.mu, strict=True))
         for component in ("alm", "spss", "gr", "kho"):
             with self.subTest(component=component):
+                # Both routes derive from the same equilibrium output, so they
+                # agree only to MAGEMin's convergence residual: measured gaps
+                # are <=3e-5 relative on macOS and up to ~7e-5 on Linux CI.
+                # Scale the tolerance with the exchange magnitude; a genuine
+                # formula-basis error would be orders of magnitude larger.
                 self.assertAlmostEqual(
-                    mu[component] - mu["py"], exchanges[component], delta=0.03
+                    mu[component] - mu["py"],
+                    exchanges[component],
+                    delta=max(0.05, 2e-4 * abs(exchanges[component])),
                 )
 
     def test_fe2o3_only_bulk_is_standardised_to_positive_molar_oxygen(self):
