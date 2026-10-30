@@ -59,7 +59,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
                 Pi, Ti, ti,
                 r_min=10, r_max=100, 
                 garnet_classes=99, nR_diff=99, 
-                fractionate=False, normalise_start=True):
+                fractionate=False, normalise_start=True, mdf=False):
         """
         Generate the garnet data from MAGEMin.
         
@@ -93,6 +93,14 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
             the garnet field the seed is zero anyway).  If False, the
             initial thermodynamic garnet fraction is stripped from the bulk
             at step 0 and counts as the start of the pile.
+        mdf : bool, default=False
+            **Experimental.**  Forwarded to :meth:`gt_along_path`.  When
+            True the composition of the reported and (with
+            ``fractionate=True``) segregated garnet follows the
+            maximum-driving-force / parallel-tangent model at each step,
+            while the garnet amounts driving the growth/cohort bookkeeping
+            stay equilibrium.  The MDF route is provisional for now and its
+            behaviour (supply capping, non-convergence handling) may change.
 
         Notes
         -----
@@ -114,6 +122,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         self.nR_diff = nR_diff
         self.fractionate = fractionate
         self.normalise_start = normalise_start
+        self.mdf = mdf
         self.X_last_growth = None
         self.first_growth_index = None
         self.last_growth_index = None
@@ -122,7 +131,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
         ### calculate the garnet data over path
         (self.gt_mol_frac, self.gt_wt_frac, self.gt_vol_frac, self.Mgi, self.Mni, self.Fei, self.Cai, self.X_along_path) = self.gt_along_path(
-            self.Pi, self.Ti, fractionate=self.fractionate, normalise_start=self.normalise_start)
+            self.Pi, self.Ti, fractionate=self.fractionate, normalise_start=self.normalise_start, mdf=self.mdf)
 
 
         if self.normalise_start and self.gt_vol_frac[0] > 0:

@@ -12,6 +12,13 @@ generation, phase searching, geothermobarometry and garnet MDF calculations.
 ### `garnet.py`
 - **`MAGEMinGarnetCalculator`** extracts garnet chemistry and models garnet
   evolution along P–T paths, optionally with fractionation.
+- `gt_along_path(P, T, fractionate=..., normalise_start=..., mdf=...)` drives
+  growth along a path. With `mdf=True` the reported cation proportions and
+  the segregated composition (via `fractionate_phase(phase_comp=...)`) come
+  from a state-shared `GarnetMDFCalculator` solved on each step's reactive
+  bulk, while garnet amounts stay equilibrium (MDF has no mode). Removals
+  are capped at what the bulk can supply of every MDF oxide (warning when
+  capped), and non-converged MDF solves warn and are used anyway.
 - Growth cation outputs keep their historical `(Mg, Mn, Fe, Ca)` tuple (and
   optional weight conversion). Growth/APFU and MDF endmember projections share
   the atomic cation normaliser in `garnet_composition.py`; closed proportions

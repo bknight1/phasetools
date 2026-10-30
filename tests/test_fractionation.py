@@ -12,7 +12,7 @@ refractory garnet — except for the retained seed baseline when
   per basis (fraction of the original system), including mol/wt/vol basis
   conversion of each removal;
 * ``fractionate=False`` still returns the equilibrium modes unchanged and
-  never constructs the fractionation helper.
+  never calls ``fractionate_phase``.
 
 No live Julia runtime is needed -- all MAGEMin calls are mocked.
 """
@@ -46,20 +46,18 @@ def _point(gt_mol, gt_wt, gt_vol):
 
 def _run(calc, points, fractionate=True, normalise_start=True):
     calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
-    mock_pf = MagicMock()
-    mock_pf.fractionate_phase = MagicMock(return_value=np.array([50.0, 50.0]))
     with (
-        patch("phasetools.calculators.phase_search.PhaseFunctions", return_value=mock_pf),
+        patch("phasetools.calculators.phase_search.PhaseFunctions") as pf_cls,
         patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
     ):
-        calc._copy_state_to = MagicMock()
+        pf_cls.fractionate_phase = MagicMock(return_value=np.array([50.0, 50.0]))
         mock_jlconvert.side_effect = lambda t, v: np.array(v, dtype=float)
         P = np.arange(len(points), dtype=float) + 10.0
         T = np.arange(len(points), dtype=float) + 800.0
         result = calc.gt_along_path(P, T, fractionate=fractionate,
                                     normalise_start=normalise_start)
-    calls = [c.kwargs["frac_amount"] for c in mock_pf.fractionate_phase.call_args_list]
-    return result, calls, mock_pf
+    calls = [c.kwargs["frac_amount"] for c in pf_cls.fractionate_phase.call_args_list]
+    return result, calls, pf_cls
 
 
 class TestFullFractionRemoval(unittest.TestCase):
@@ -166,7 +164,7 @@ class TestBasisConversion(unittest.TestCase):
 
 
 class TestNoFractionationUnchanged(unittest.TestCase):
-    """fractionate=False: equilibrium modes returned, no helper constructed."""
+    """fractionate=False: equilibrium modes returned, no fractionation call."""
 
     def test_equilibrium_modes_and_no_fractionation_helper(self):
         calc = _make_calc("mol")
@@ -184,6 +182,7 @@ class TestNoFractionationUnchanged(unittest.TestCase):
             T = np.array([800.0, 810.0])
             mol, wt, vol, *_ = calc.gt_along_path(P, T, fractionate=False)
             pf_cls.assert_not_called()
+            pf_cls.fractionate_phase.assert_not_called()
 
         np.testing.assert_allclose(mol, [0.05, 0.12])
         np.testing.assert_allclose(wt, [0.04, 0.10])

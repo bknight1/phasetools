@@ -187,9 +187,8 @@ class TestWtFractionUsesWtBasis(unittest.TestCase):
 
     @patch('phasetools.calculators.garnet.MAGEMin_C')
     @patch('phasetools.calculators.garnet.jlconvert')
-    @patch('phasetools.calculators.phase_search.PhaseFunctions.__init__', return_value=None)
     @patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__', return_value=None)
-    def test_wt_fraction_uses_wt_basis(self, mock_grid_init, mock_pf_init, mock_jlconvert, mock_magemin):
+    def test_wt_fraction_uses_wt_basis(self, mock_grid_init, mock_jlconvert, mock_magemin):
         from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 
         calc = MAGEMinGarnetCalculator.__new__(MAGEMinGarnetCalculator)
@@ -209,13 +208,10 @@ class TestWtFractionUsesWtBasis(unittest.TestCase):
         mock_return_1 = (0.12, 0.07, 0.10, 0.3, 0.05, 0.4, 0.25, MagicMock())
         calc._gt_single_point_from_jl = MagicMock(side_effect=[mock_return_0, mock_return_1])
 
-        # Mock PhaseFunctions
-        mock_pf = MagicMock()
-        mock_pf.fractionate_phase = MagicMock(return_value=np.array([50.0, 50.0]))
-
-        # Patch PhaseFunctions at its source module (local import in gt_along_path)
-        with patch('phasetools.calculators.phase_search.PhaseFunctions', return_value=mock_pf):
-            calc._copy_state_to = MagicMock()
+        # Patch PhaseFunctions at its source module (local import in gt_along_path);
+        # fractionate_phase is a staticmethod called on the class itself
+        with patch('phasetools.calculators.phase_search.PhaseFunctions') as pf_cls:
+            pf_cls.fractionate_phase = MagicMock(return_value=np.array([50.0, 50.0]))
             # jlconvert should pass through the array so np.array(X) works
             mock_jlconvert.side_effect = lambda t, v: np.array(v, dtype=float)
 
@@ -227,7 +223,7 @@ class TestWtFractionUsesWtBasis(unittest.TestCase):
             # Step 1: full-fraction minus retained seed baseline:
             #         frac_amount = gt_wt[1] - seed = 0.07 - 0.05 = 0.02
             #         (full fraction minus seed, NOT a step-to-step difference)
-            calls = mock_pf.fractionate_phase.call_args_list
+            calls = pf_cls.fractionate_phase.call_args_list
             self.assertEqual(len(calls), 1, f"Expected 1 fractionation call, got {len(calls)}")
             _, kwargs = calls[0]
             self.assertAlmostEqual(kwargs['frac_amount'], 0.02, places=10,
@@ -242,9 +238,8 @@ class TestXAlongPathNormalised(unittest.TestCase):
 
     @patch('phasetools.calculators.garnet.MAGEMin_C')
     @patch('phasetools.calculators.garnet.jlconvert')
-    @patch('phasetools.calculators.phase_search.PhaseFunctions.__init__', return_value=None)
     @patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__', return_value=None)
-    def test_x_along_path_normalised_to_one(self, mock_grid_init, mock_pf_init, mock_jlconvert, mock_magemin):
+    def test_x_along_path_normalised_to_one(self, mock_grid_init, mock_jlconvert, mock_magemin):
         from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 
         calc = MAGEMinGarnetCalculator.__new__(MAGEMinGarnetCalculator)
