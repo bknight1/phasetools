@@ -140,7 +140,7 @@ x_mol_jl, xox_mol_jl = MAGEMin_C.convertBulk4MAGEMin(x_jl, ox_jl, "wt", db)
 
 - MAGEMin uses **FeO + O (excess oxygen)** basis for most databases (`ig`, `mp`, etc.).
 - `1 mol Fe2O3 → 2 mol FeO + 1 mol O`
-- `get_phase_fe_split(out, phase)` for heuristic Fe²⁺/Fe³⁺ partitioning.
+- `get_phase_fe_split(out, phase)` for Fe²⁺/Fe³⁺ partitioning. On O-basis databases the ferric amount comes from MAGEMin's O component (`Comp['O']` scaled to the APFU norm — exact at any excess; integer-floor fallback only for outputs without `Comp`), and `FeO` carries *total* iron, so `Fe²⁺ = FeO − Fe³⁺`. `get_oxide_apfu` follows MAGEMin's `out.ph` layout: solution phases from `SS_vec`, pure phases from `PP_vec` (pure-phase APFU values are real, not zeros).
 - `get_phase_mg_number` atomic across Fe, FeO, Fe2O3 components.
 - `calculate_kd_fe_mg(out, phase1, phase2)` for distribution coefficients.
 - **Garnet X-site fractions default to FeOt** (all Fe as Fe²⁺): `MAGEMinGarnetCalculator` / `GarnetGenerator` take a `fe_basis` argument (`'FeOt'` default, `'Fe2+'` for the stoichiometric ferrous-only split). FeOt is the community convention for garnet end-members (e.g. Williams & Grambling 1990; Krogh Ravna 2000); use `'Fe2+'` only when garnet Fe³⁺ is known to be significant.

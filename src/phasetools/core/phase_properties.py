@@ -70,19 +70,34 @@ def get_oxide_apfu(out, ph, oxides, instance=0):
     dict
         ``{oxide: value}`` for an integer index, or ``{oxide: ndarray}``
         (one entry per phase instance) for ``'all'``.
+
+    Notes
+    -----
+    Follows MAGEMin's output layout: ``out.ph`` lists solution phases first
+    (``SS_vec``) and pure phases after (``PP_vec``), so each phase is read
+    from its own vector — pure-phase APFU values are not silently zero.
     """
     idx = _phase_indices(out, ph, instance)
     if not idx:
         return {oxide: 0.0 for oxide in oxides} if instance != 'all' \
             else {oxide: np.zeros(0) for oxide in oxides}
     oxide_names = [str(ox) for ox in out.oxides]
+    ss_vec = list(getattr(out, "SS_vec", ()) or ())
+    n_ss_raw = getattr(out, "n_SS", None)
+    if isinstance(n_ss_raw, (int, np.integer)):
+        n_ss = int(n_ss_raw)          # MAGEMin's own solution-phase count
+    else:
+        n_ss = len(ss_vec)            # mocks/fixtures without n_SS
     per = []
     for i in idx:
         try:
-            values = np.array(out.SS_vec[i].Comp_apfu, dtype=float)
+            if i < n_ss and i < len(ss_vec):
+                values = np.array(ss_vec[i].Comp_apfu, dtype=float)
+            else:
+                values = np.array(out.PP_vec[i - n_ss].Comp_apfu, dtype=float)
             per.append({ox: float(values[oxide_names.index(ox)])
                         if ox in oxide_names else 0.0 for ox in oxides})
-        except (ValueError, IndexError, AttributeError):
+        except (ValueError, IndexError, AttributeError, TypeError):
             per.append({ox: 0.0 for ox in oxides})
     if instance == 'all':
         return {ox: np.array([d[ox] for d in per]) for ox in oxides}
@@ -225,11 +240,77 @@ def get_phase_mg_number(out, ph, instance=0):
     vals = [_mg(i) for i in idx]
     return float(vals[0]) if instance != 'all' else np.array(vals)
 
+def _o_component_excess(out, ph, instance=0):
+    """Excess (ferric) oxygen in APFU units from MAGEMin's O component.
+
+    ``Comp`` holds molar *oxide-molecule* fractions (summing to 1 over all
+    molecules, including the O component and H2O): structural oxygen lives
+    inside the cation-oxide entries, and the redox oxygen sits in the ``O``
+    entry alone.  Scaling that entry by the APFU norm — derived from any
+    1:1 oxide present (SiO2 preferred) — gives the excess directly.  Unlike
+    the integer-floor approximation this is exact at any excess magnitude.
+
+    Returns ``None`` when usable ``Comp`` data is missing (mock outputs,
+    phases without a scalable oxide), so callers can fall back to the floor
+    heuristic on the APFU O column.
+    """
+    try:
+        idx = _phase_indices(out, ph, instance)
+        if not idx:
+            return None
+        oxide_names = [str(ox) for ox in out.oxides]
+        if "O" not in oxide_names:
+            return None
+        o_i = oxide_names.index("O")
+        n_ss_raw = getattr(out, "n_SS", None)
+        if isinstance(n_ss_raw, (int, np.integer)):
+            n_ss = int(n_ss_raw)
+        else:
+            n_ss = len(getattr(out, "SS_vec", ()) or ())
+        # k = oxide molecules per formula unit: apfu column / (stoich * comp)
+        # for a 1:1 cation oxide; Al2O3 needs the factor 2 (apfu = Al atoms).
+        scale_factors = (
+            ("SiO2", 1), ("MgO", 1), ("FeO", 1), ("CaO", 1), ("MnO", 1),
+            ("Na2O", 1), ("K2O", 1), ("TiO2", 1), ("Al2O3", 2),
+        )
+        per = []
+        for i in idx:
+            if i < n_ss:
+                src = out.SS_vec[i]
+            else:
+                src = out.PP_vec[i - n_ss]
+            comp = np.array(src.Comp, dtype=float)
+            apfu = np.array(src.Comp_apfu, dtype=float)
+            k = None
+            for name, stoich in scale_factors:
+                if name not in oxide_names:
+                    continue
+                j = oxide_names.index(name)
+                if comp[j] > 1.0e-12 and apfu[j] > 0.0:
+                    k = float(apfu[j]) / (stoich * float(comp[j]))
+                    break
+            if k is None or not np.isfinite(k):
+                return None
+            per.append(max(float(comp[o_i]) * k, 0.0))
+        if instance == 'all':
+            return np.asarray(per, dtype=float)
+        return per[0]
+    except (AttributeError, IndexError, TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
 def get_phase_fe_split(out, ph, instance=0):
     """
-    Calculate Fe2+ and Fe3+ amounts for a phase using an excess oxygen heuristic.
-    
+    Calculate Fe2+ and Fe3+ amounts for a phase using MAGEMin's excess
+    oxygen (O component).
+
     Works for both traditional FeO-Fe2O3 bases and MAGEMin's O-basis (ig, mp).
+
+    The ferric amount derives from MAGEMin's O component (``Comp['O']``
+    scaled to the APFU norm) — exact at any excess magnitude; the
+    integer-floor rule on the APFU O column is only a fallback for outputs
+    without usable ``Comp`` data (mocks/fixtures).  On O-basis databases
+    ``FeO`` carries *total* iron, so ``Fe2 = FeO - Fe3``.
 
     For a phase that appears multiple times (a solvus), ``instance=0``
     returns the first instance (warning if more than one exists) and
@@ -254,8 +335,10 @@ def get_phase_fe_split(out, ph, instance=0):
         feo + 2.0 * fe2o3
     )
 
-    # 2. Calculate Fe3+ atoms using excess oxygen heuristic
-    excess_o = np.maximum(ato - np.floor(ato), 0.0)
+    # 2. Ferric iron: 2 * O per Fe3+ pair, from the O component when available.
+    excess_o = _o_component_excess(out, ph, instance=instance)
+    if excess_o is None:
+        excess_o = np.maximum(ato - np.floor(ato), 0.0)
     fe3 = 2.0 * fe2o3 + 2.0 * excess_o
 
     # 3. Divalent iron is the remainder

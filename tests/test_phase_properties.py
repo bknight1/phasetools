@@ -1,12 +1,14 @@
 # Mock MAGEMin_C before importing PhaseTools components that depend on it
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 mock_magemin = MagicMock()
 sys.modules['phasetools.MAGEMin_C'] = mock_magemin
 
 from phasetools.core.base import MAGEMinBase
+from phasetools.core.phase_properties import get_oxide_apfu, get_phase_fe_split
 
 
 class TestRedoxLogic(unittest.TestCase):
@@ -244,6 +246,89 @@ class TestRedoxLogic(unittest.TestCase):
         self.assertEqual(vals.shape, (2,))
         self.assertAlmostEqual(vals[0], 0.0)
         self.assertAlmostEqual(vals[1], 1.0)
+
+class TestOxideApfuVectorDispatch(unittest.TestCase):
+    """get_oxide_apfu follows MAGEMin's layout: SS_vec for solution phases,
+    PP_vec for pure phases (out.ph lists solution phases first)."""
+
+    @staticmethod
+    def _make_output():
+        out = SimpleNamespace()
+        out.ph = ["g", "q", "ilm"]
+        out.oxides = ["SiO2", "FeO", "O"]
+        out.n_SS = 1
+        out.SS_vec = [SimpleNamespace(Comp_apfu=[3.0, 1.5719, 12.0293])]
+        out.PP_vec = [
+            SimpleNamespace(Comp_apfu=[1.0, 0.0, 2.0]),    # q: SiO2, no Fe
+            SimpleNamespace(Comp_apfu=[0.0, 1.5, 3.01]),   # ilm: Fe-bearing pure phase
+        ]
+        return out
+
+    def test_solution_phase_reads_ss_vec(self):
+        out = self._make_output()
+        self.assertEqual(
+            get_oxide_apfu(out, "g", ["SiO2", "FeO", "O"]),
+            {"SiO2": 3.0, "FeO": 1.5719, "O": 12.0293},
+        )
+
+    def test_pure_phase_reads_pp_vec(self):
+        """Pure phases previously returned zeros (SS_vec-only read)."""
+        out = self._make_output()
+        self.assertEqual(
+            get_oxide_apfu(out, "q", ["SiO2", "O"]),
+            {"SiO2": 1.0, "O": 2.0},
+        )
+
+    def test_fe_split_uses_pure_phase_apfu(self):
+        """get_phase_fe_split inherits the PP_vec fix: ilm excess O -> Fe3+."""
+        out = self._make_output()
+        split = get_phase_fe_split(out, "ilm")
+        self.assertAlmostEqual(split["Fe3"], 0.02, places=10)   # 2 * (3.01 - 3)
+        self.assertAlmostEqual(split["Fe2"], 1.48, places=10)   # 1.5 - 0.02
+
+
+class TestFeSplitOComponentRoute(unittest.TestCase):
+    """get_phase_fe_split prefers MAGEMin's O component over the floor rule.
+
+    ``Comp['O']`` (molar O-component) scaled to the APFU norm is the exact
+    excess; the integer-floor fallback only applies when Comp is missing.
+    """
+
+    @staticmethod
+    def _output(comp=None, apfu=(2.0, 2.0, 7.0), oxides=("SiO2", "FeO", "O")):
+        out = SimpleNamespace()
+        out.ph = ["dio"]
+        out.oxides = list(oxides)
+        out.n_SS = 1
+        ss = SimpleNamespace(Comp_apfu=list(apfu))
+        if comp is not None:
+            ss.Comp = list(comp)
+        out.SS_vec = [ss]
+        return out
+
+    def test_o_component_beats_floor_at_integer_excess(self):
+        # structural 6 + excess 1.0 -> APFU O = 7.0 exactly: floor reads 0.
+        # molecules per formula: SiO2 2, FeO 2, O 1 -> sum 5 (k = 5).
+        out = self._output(comp=[0.4, 0.4, 0.2], apfu=[2.0, 2.0, 7.0])
+        split = get_phase_fe_split(out, "dio")
+        self.assertAlmostEqual(split["Fe3"], 2.0, places=10)  # floor would give 0
+        self.assertAlmostEqual(split["Fe2"], 0.0, places=10)   # FeO 2 - Fe3 2
+
+    def test_zero_o_component_yields_no_ferric(self):
+        # APFU O is fractional (floor would invent Fe3 = 0.08) but the O
+        # component is zero: MAGEMin assigned no redox oxygen -> pure Fe2+.
+        out = self._output(comp=[0.5, 0.5, 0.0], apfu=[3.0, 2.0, 6.04])
+        split = get_phase_fe_split(out, "dio")
+        self.assertAlmostEqual(split["Fe3"], 0.0, places=12)
+        self.assertAlmostEqual(split["Fe2"], 2.0, places=10)
+
+    def test_falls_back_to_floor_without_comp(self):
+        # Mock/fixture outputs without Comp keep the historical floor rule.
+        out = self._output(comp=None, apfu=[3.0, 2.0, 6.04])
+        split = get_phase_fe_split(out, "dio")
+        self.assertAlmostEqual(split["Fe3"], 0.08, places=10)  # 2 * (6.04 - 6)
+        self.assertAlmostEqual(split["Fe2"], 1.92, places=10)
+
 
 if __name__ == '__main__':
     unittest.main()

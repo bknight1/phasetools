@@ -40,11 +40,16 @@ Use `rm_list=['g']` (for example) when actual phase suppression is intended.
 ### `phase_properties.py`
 - Standardised utility functions for extracting data from MAGEMin results:
     - `phase_frac`: Total phase fractions (handles solvi).
-    - `get_oxide_apfu`: Cation counts (Atoms Per Formula Unit).
+    - `get_oxide_apfu`: Cation counts (Atoms Per Formula Unit) — solution
+      phases read from `SS_vec`, pure phases from `PP_vec`.
     - `get_phase_chemistry`: Oxide concentrations (wt% or mol%).
     - `get_phase_mg_number`: Phase-wide $Mg\#$ (Total Iron).
     - `get_phase_mg2_number`: Phase-wide $Mg\#$ (Divalent Iron only).
-    - `get_phase_fe_split`: Heuristic splitting of total iron into $\text{Fe}^{2+}$ and $\text{Fe}^{3+}$.
+    - `get_phase_fe_split`: Splits total iron into $\text{Fe}^{2+}$ and
+      $\text{Fe}^{3+}$ from MAGEMin's O component (`Comp['O']` scaled to the
+      APFU norm; integer-floor fallback when `Comp` is unavailable). On
+      O-basis databases `FeO` carries total iron, so
+      $\text{Fe}^{2+} = \text{FeO} - \text{Fe}^{3+}$.
     - `calculate_kd_fe_mg`: Distribution coefficients between phases.
 
 ### Solvus (multi-instance) handling
