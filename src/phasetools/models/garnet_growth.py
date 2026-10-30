@@ -80,20 +80,28 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         nR_diff : int, default=99
             Number of radial shells per garnet for compositional zoning.
         fractionate : bool, default=False
-            If True, fractionate garnet from the bulk composition as it grows.
+            If True, the garnet present at each P-T point is removed from the
+            reactive bulk **in full** before stepping on — instantaneous
+            segregation (Rayleigh fractionation as the path is refined;
+            Perple_X phase-fractionation semantics).  The returned
+            ``gt_*_frac`` arrays then hold the **cumulative segregated pile**
+            per basis, which is what drives the growth/cohort bookkeeping.
         normalise_start : bool, default=True
-            If True, the initial garnet volume is set to 0 and only new growth is modeled.
-            If False, the initial thermodynamic volume is used as the starting point.
+            If True, any garnet at the first P-T point is a retained seed:
+            it stays in the reactive bulk, is not counted in the pile, and
+            only growth beyond it is segregated (for a path starting outside
+            the garnet field the seed is zero anyway).  If False, the
+            initial thermodynamic garnet fraction is stripped from the bulk
+            at step 0 and counts as the start of the pile.
 
         Notes
         -----
-        When both ``fractionate=True`` and ``normalise_start=False``, the
-        initial garnet fraction is removed from the reactive bulk at the first
-        P-T point (overstepped nucleation).  Subsequent growth increments are
-        then fractionated from the depleted bulk.  When
-        ``normalise_start=True``, only new growth beyond the initial fraction
-        is modelled and fractionated; the initial garnet is treated as a
-        non-reactive seed.
+        With ``fractionate=True`` the reactive bulk is progressively
+        depleted, so later garnet grows from an effective (Rayleigh) bulk
+        and ``X_last_growth`` — the bulk handed to the retrograde
+        calculation — is that depleted composition.  With
+        ``fractionate=False`` the closed-system equilibrium is used
+        throughout and ``X_last_growth`` equals the original bulk.
         """
         
 

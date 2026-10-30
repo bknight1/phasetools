@@ -31,6 +31,19 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 
 ---
 
+## `test_fractionation.py`
+
+**What this file proves:** `gt_along_path(fractionate=True)` implements full-fraction (Rayleigh / Perple_X-style) instantaneous segregation — the entire garnet present on the reactive bulk is removed at each P–T point — and reports the cumulative segregated pile per basis.
+
+### Key tests
+
+- **Full-fraction removal:** Each garnet-bearing step removes its *entire* current mode (minus the retained seed baseline when `normalise_start=True`), not a step-to-step or record-breaking increment. The discriminator: with a seed the second removal is `g₂ − seed`, where the old running-max scheme would give `g₂ − g₁`.
+- **Seed rules:** `normalise_start=True` retains the first-point garnet in the reactive bulk (never removed, not counted in the pile); `normalise_start=False` strips it at step 0 so every later step removes its full fraction.
+- **Cumulative pile per basis:** returned `gt_mol/wt/vol_frac` under fractionation are the monotone segregated pile as fractions of the original system, with each removal converted between mol/wt/vol via that step's equilibrium mode ratios; `pile[i] == 1 − Π(1 − f_k)` is checked independently.
+- **`fractionate=False` unchanged:** equilibrium modes are returned and the fractionation helper is never constructed.
+
+---
+
 ## `test_phase_search.py`
 
 **What this file proves:** `PhaseFunctions.fractionate_phase` handles pure phases (PP_vec), solution phases (SS_vec), and zero-fraction edge cases without errors.

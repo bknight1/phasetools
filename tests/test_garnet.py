@@ -223,13 +223,15 @@ class TestWtFractionUsesWtBasis(unittest.TestCase):
             T = np.array([800.0, 810.0])
             calc.gt_along_path(P, T, fractionate=True, normalise_start=True)
 
-            # Step 0: normalise_start=True, so no fractionation at i=0
-            # Step 1: i>0, frac_amount = gt_wt[1] - gt_wt[0] = 0.07 - 0.05 = 0.02
+            # Step 0: normalise_start=True, so the seed is retained (no call)
+            # Step 1: full-fraction minus retained seed baseline:
+            #         frac_amount = gt_wt[1] - seed = 0.07 - 0.05 = 0.02
+            #         (full fraction minus seed, NOT a step-to-step difference)
             calls = mock_pf.fractionate_phase.call_args_list
             self.assertEqual(len(calls), 1, f"Expected 1 fractionation call, got {len(calls)}")
             _, kwargs = calls[0]
             self.assertAlmostEqual(kwargs['frac_amount'], 0.02, places=10,
-                                   msg="frac_amount should be based on wt fraction (0.07-0.05), not mol (0.12-0.10)")
+                                   msg="frac_amount should be wt-basis current fraction minus retained seed (0.07-0.05), not mol (0.12-0.10)")
 
 
 # ===========================================================================
