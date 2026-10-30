@@ -12,6 +12,7 @@ References
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+import re
 
 import numpy as np
 from juliacall import Main as jl
@@ -22,7 +23,9 @@ from phasetools import MAGEMin_C
 
 from ..core.base import MAGEMinBase
 from ..core.engine import evaluate_solution_phase_gibbs
+from ..core.phase_properties import phase_frac
 from ..core.thermodynamics import extract_gamma
+from ..utils.bulk_rock import atomic_mass_dict, get_molar_mass_dict
 from .garnet_composition import normalise_fe_basis, normalise_garnet_cations
 
 _DEFAULT_COMPONENTS = {
@@ -73,6 +76,24 @@ class GarnetMDFResult:
         "2 Fe only for FeOt. These are not APFU or X-site proportions; Al, Si, "
         "O and other cations are excluded."
     )
+    equilibrium_modes: tuple[float, ...] = ()
+    """Equilibrium garnet modes ``(mol, wt, vol)`` from the unrestricted leg.
+
+    The amounts a growth model needs (MDF itself has no mode); empty when
+    the equilibrium output did not expose phase fractions.
+    """
+    mdf_oxide_wt: tuple[float, ...] = ()
+    """Full oxide chemistry of the MDF garnet as unit weight fractions.
+
+    Mixed from the MDF endmember fractions and MAGEMin's per-endmember
+    ``emComp_wt``/``emComp_apfu`` matrices (mass-weighted; see
+    :func:`garnet_endmember_fractions_to_oxide_wt`), aligned to the
+    calculator's standardised bulk oxide order.  This is the composition
+    to segregate from the bulk under ``fractionate=True``; empty when the
+    equilibrium output did not expose endmember composition matrices.
+    """
+    _equilibrium_output: object = field(default=None, repr=False, compare=False)
+    """Raw equilibrium output behind ``equilibrium_modes`` (for bulk/mode access)."""
 
 
 @dataclass(frozen=True)
@@ -201,6 +222,105 @@ def garnet_fractions_to_mg_fe_mn_ca(
         if name == kho_name and basis == "FeOt":
             amounts["Fe"] += 2.0 * amount
     return normalise_garnet_cations(amounts)
+
+
+def garnet_endmember_fractions_to_oxide_wt(
+    fractions: Mapping[str, float],
+    endmember_names: Sequence[str],
+    em_comp_wt: np.ndarray,
+    em_comp_apfu: np.ndarray,
+    oxide_names: Sequence[str],
+) -> np.ndarray:
+    """Mix garnet endmember fractions into a full oxide weight-fraction vector.
+
+    Reconstructs the complete garnet oxide chemistry — every oxide the
+    solution model carries (SiO₂, Al₂O₃, MgO, FeO, MnO, CaO, and any
+    component O from ferric kho) — by mass-weighted mixing of MAGEMin's
+    per-endmember compositions.  The recipe is verified against
+    MAGEMin's own ``Comp_wt`` for equilibrium fractions to machine
+    precision: molar fractions are converted to mass fractions via
+    endmember molar masses (from ``em_comp_apfu`` atom counts × atomic
+    masses) *before* mixing, because normalised endmember rows carry
+    different numbers of oxide molecules per formula unit and do not
+    mix linearly on a molar basis.
+
+    Parameters
+    ----------
+    fractions : mapping
+        Endmember name → molar fraction (e.g. MDF solution or
+        equilibrium ``emFrac``).
+    endmember_names : sequence of str
+        Names ordering the rows of ``em_comp_wt``/``em_comp_apfu``.
+    em_comp_wt : numpy.ndarray
+        Per-endmember oxide composition, weight fractions, shape
+        ``(n_endmembers, n_oxides)``; rows sum to 1 (MAGEMin
+        ``SS_vec[i].emComp_wt``).
+    em_comp_apfu : numpy.ndarray
+        Per-endmember atom counts per formula unit, same shape
+        (MAGEMin ``SS_vec[i].emComp_apfu``; oxide columns hold atoms of
+        that oxide's element — e.g. Al₂O₃ column = 2 for pyrope —
+        plus a total-O column, giving exact endmember molar masses).
+    oxide_names : sequence of str
+        Oxide order of the output vector (the calculator's standardised
+        bulk oxide list).
+
+    Returns
+    -------
+    numpy.ndarray
+        Unit-sum oxide weight fractions aligned to ``oxide_names``.
+
+    Raises
+    ------
+    ValueError
+        If shapes are inconsistent, an endmember name is unknown, the
+        molar fractions are invalid, or any molar mass is non-positive.
+    """
+    names = tuple(str(name) for name in endmember_names)
+    oxides = tuple(str(oxide) for oxide in oxide_names)
+    comp_wt = np.asarray(em_comp_wt, dtype=float)
+    apfu = np.asarray(em_comp_apfu, dtype=float)
+    n_em, n_ox = len(names), len(oxides)
+    if comp_wt.shape != (n_em, n_ox) or apfu.shape != (n_em, n_ox):
+        raise ValueError(
+            f"endmember composition matrices must have shape "
+            f"({n_em}, {n_ox}); got {comp_wt.shape} and {apfu.shape}"
+        )
+    unknown = [key for key in fractions if str(key) not in names]
+    if unknown:
+        raise ValueError(
+            f"Unknown garnet endmember(s) {sorted(unknown)}; "
+            f"available names are {sorted(names)}"
+        )
+    f = np.array([float(fractions.get(name, 0.0)) for name in names])
+    if not np.all(np.isfinite(f)) or np.any(f < 0.0):
+        raise ValueError("endmember fractions must be finite and non-negative")
+
+    # Endmember molar masses: atom counts × atomic mass of each column's
+    # element (the leading element of the oxide formula).
+    masses = np.empty(n_ox)
+    for index, oxide in enumerate(oxides):
+        match = re.match(r"([A-Z][a-z]?)", oxide)
+        element = match.group(1) if match else None
+        if element is None or element not in atomic_mass_dict:
+            raise ValueError(f"Cannot derive an atomic mass for oxide {oxide!r}")
+        masses[index] = atomic_mass_dict[element]
+    endmember_mw = apfu @ masses
+    if not np.all(np.isfinite(endmember_mw)) or np.any(endmember_mw <= 0.0):
+        raise ValueError(
+            "Endmember molar masses must be positive; check emComp_apfu rows"
+        )
+
+    weights = f * endmember_mw
+    total = weights.sum()
+    if not np.isfinite(total) or total <= 0.0:
+        raise ValueError("Endmember fractions have no positive mass total")
+    weights = weights / total
+
+    oxide_wt = weights @ comp_wt
+    oxide_sum = oxide_wt.sum()
+    if not np.isfinite(oxide_sum) or oxide_sum <= 0.0:
+        raise ValueError("Mixed oxide composition has no positive total")
+    return oxide_wt / oxide_sum
 
 
 def _validate_component_mapping(
@@ -998,6 +1118,44 @@ class GarnetMDFCalculator(MAGEMinBase):
             kho_name=self.kho_name,
             fe_basis=basis,
         )
+        # Surface what growth consumers need alongside the closed cations:
+        # the equilibrium modes (amounts — MDF itself has no mode) and the
+        # full oxide chemistry of the MDF garnet (the composition to
+        # segregate from the bulk under fractionate=True).  Both degrade
+        # gracefully when the equilibrium output is a minimal mock.
+        equilibrium_modes = (
+            float(phase_frac("g", equilibrium_output, "mol")),
+            float(phase_frac("g", equilibrium_output, "wt")),
+            float(phase_frac("g", equilibrium_output, "vol")),
+        )
+        mdf_oxide_wt: tuple[float, ...] = ()
+        try:
+            g_index = next(
+                index
+                for index, phase in enumerate(equilibrium_output.ph)
+                if str(phase) == "g"
+            )
+            solution = equilibrium_output.SS_vec[g_index]
+            em_names = tuple(str(name) for name in solution.emNames)
+            em_comp_wt = np.vstack(
+                [np.asarray(row, dtype=float) for row in solution.emComp_wt]
+            )
+            em_comp_apfu = np.vstack(
+                [np.asarray(row, dtype=float) for row in solution.emComp_apfu]
+            )
+        except (AttributeError, IndexError, StopIteration, TypeError, ValueError):
+            em_names, em_comp_wt, em_comp_apfu = (), None, None
+        if em_comp_wt is not None:
+            mdf_oxide_wt = tuple(
+                float(value)
+                for value in garnet_endmember_fractions_to_oxide_wt(
+                    fractions,
+                    em_names,
+                    em_comp_wt,
+                    em_comp_apfu,
+                    self._standardized_bulk_molar_oxides,
+                )
+            )
         return GarnetMDFResult(
             mdf=mdf,
             equilibrium=equilibrium,
@@ -1014,6 +1172,9 @@ class GarnetMDFCalculator(MAGEMinBase):
             message=message,
             fe_basis=basis,
             solver_mode=solver_mode,
+            equilibrium_modes=equilibrium_modes,
+            mdf_oxide_wt=mdf_oxide_wt,
+            _equilibrium_output=equilibrium_output,
         )
 
     def scan_isopleths(
@@ -1107,6 +1268,7 @@ __all__ = [
     "GarnetMDFCalculator",
     "GarnetMDFGridResult",
     "GarnetMDFResult",
+    "garnet_endmember_fractions_to_oxide_wt",
     "garnet_fractions_to_mg_fe_mn_ca",
     "kho_aware_exchange_potentials",
 ]
