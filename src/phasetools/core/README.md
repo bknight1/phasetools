@@ -12,7 +12,8 @@ Use `rm_list=['g']` (for example) when actual phase suppression is intended.
 ### `base.py`
 - **`MAGEMinBase`**: The base class for all calculators and models. 
 - Manages bulk composition initialisation and unit standardisation (e.g., converting wt% to molar fractions).
-- Provides state-sharing utilities (`_copy_state_to`) to sync Julia objects between different instances.
+- Provides state-sharing utilities (`_copy_state_to`) to sync Julia objects between different instances. The target becomes a *non-owner* of the shared handle (`_owns_data = False`) and also receives `db`/`dataset`/`verbose`; if it previously owned a different handle (construct-then-copy), that handle is finalised automatically so its C-side memory is not leaked.
+- **`finalize()`**: releases the ~40 MB C-side allocation behind `self.data` — Julia's GC never does, so call this when finished with an instance (idempotent). Only the *owning* instance may finalise; non-owners warn and skip.
 
 ### `engine.py`
 - Low-level interface for Python-to-Julia type conversion.

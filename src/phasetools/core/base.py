@@ -1,3 +1,5 @@
+import warnings
+
 from juliacall import Main as jl
 from juliacall import convert as jlconvert
 from molmass import Formula
@@ -13,14 +15,37 @@ class MAGEMinBase:
         self.dataset = dataset
         self.verbose = verbose
         self.data = MAGEMin_C.Initialize_MAGEMin(db, dataset=dataset, verbose=verbose)
+        self._owns_data = True
         self.X = None
         self.Xoxides = None
         self.sys_in = None
         self.rm_list = None
 
     def _copy_state_to(self, other):
-        """Syncs standardised state to another MAGEMinBase-derived instance."""
+        """Sync standardised state to another MAGEMinBase-derived instance.
+
+        Transfers the initialised Julia ``data`` handle, bulk composition and
+        database settings.  ``other`` becomes a *non-owner* of the shared
+        handle (``_owns_data = False``): only the owning instance may call
+        :meth:`finalize`.  If ``other`` previously owned a *different* handle
+        (the construct-then-copy pattern), that handle is finalised here so
+        its C-side memory is not leaked.
+
+        Parameters
+        ----------
+        other : MAGEMinBase
+            Target instance to receive the state.
+        """
+        if other is self:
+            return
+        other_data = getattr(other, "data", None)
+        if getattr(other, "_owns_data", False) and other_data is not None \
+                and other_data is not self.data:
+            MAGEMin_C.Finalize_MAGEMin(other_data)
         other.data = self.data
+        other.db = self.db
+        other.dataset = self.dataset
+        other.verbose = self.verbose
         other.X = self.X
         other.Xoxides = self.Xoxides
         other.sys_in = self.sys_in
@@ -28,6 +53,34 @@ class MAGEMinBase:
         other._Xoxides_py = self._Xoxides_py
         other._X_mol_standardized = self._X_mol_standardized
         other._stoich_map = self._stoich_map
+        other._owns_data = False
+
+    def finalize(self) -> None:
+        """Release the C-side MAGEMin memory held by this instance.
+
+        ``Initialize_MAGEMin`` allocates roughly 40 MB of C memory per
+        handle that Julia's garbage collector does not reclaim; only
+        ``Finalize_MAGEMin`` frees it.  Call this when finished with the
+        instance — it is idempotent.
+
+        Instances that share the handle via :meth:`_copy_state_to` are
+        non-owners: ``finalize`` warns and does nothing on them, so the
+        owning instance must finalise instead.  After finalising, every
+        instance still aliasing the handle must not be used.
+        """
+        if self.data is None:
+            return
+        if not getattr(self, "_owns_data", False):
+            warnings.warn(
+                "finalize() skipped: this instance does not own its MAGEMin "
+                "handle (shared via _copy_state_to); call finalize() on the "
+                "owning instance instead.",
+                stacklevel=2,
+            )
+            return
+        MAGEMin_C.Finalize_MAGEMin(self.data)
+        self.data = None
+        self._owns_data = False
 
     def setup_bulk_composition(self, Xoxides, X, sys_in, rm_list=None):
 
