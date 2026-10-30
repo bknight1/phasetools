@@ -4,8 +4,8 @@ from typing import ClassVar
 import numpy as np
 
 from phasetools.calculators.garnet import MAGEMinGarnetCalculator
-from phasetools.calculators.garnet_composition import garnet_cations_from_apfu
-from phasetools.calculators.garnet_mdf import garnet_fractions_to_mg_fe_mn_ca
+from phasetools.calculators.garnet.composition import garnet_cations_from_apfu
+from phasetools.calculators.garnet.mdf import garnet_fractions_to_mg_fe_mn_ca
 from phasetools.calculators.pt_grid import MAGEMinPTGridCalculator
 from phasetools.core.phase_properties import (
     get_phase_fe_split,

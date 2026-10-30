@@ -89,8 +89,8 @@ def _run(calc, points, *, oxide_wt=_MDF_OXIDE_WT, **kwargs):
     calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
     with (
         patch("phasetools.calculators.phase_search.PhaseFunctions") as pf_cls,
-        patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
-        patch("phasetools.calculators.garnet.GarnetMDFCalculator") as mdf_cls,
+        patch("phasetools.calculators.garnet.calculator.jlconvert") as mock_jlconvert,
+        patch("phasetools.calculators.garnet.calculator.GarnetMDFCalculator") as mdf_cls,
     ):
         helper = MagicMock()
         helper._owns_data = False  # let the real _copy_state_to skip Finalize
@@ -124,8 +124,8 @@ class TestMdfStateSharing(unittest.TestCase):
         calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
         with (
             patch("phasetools.calculators.phase_search.PhaseFunctions") as pf_cls2,
-            patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
-            patch("phasetools.calculators.garnet.GarnetMDFCalculator") as mdf_cls2,
+            patch("phasetools.calculators.garnet.calculator.jlconvert") as mock_jlconvert,
+            patch("phasetools.calculators.garnet.calculator.GarnetMDFCalculator") as mdf_cls2,
         ):
             pf_cls2.fractionate_phase = MagicMock(
                 return_value=np.array([40.0, 60.0])
@@ -267,8 +267,8 @@ class TestMdfNonConvergence(unittest.TestCase):
         calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
         with (
             patch("phasetools.calculators.phase_search.PhaseFunctions"),
-            patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
-            patch("phasetools.calculators.garnet.GarnetMDFCalculator") as mdf_cls,
+            patch("phasetools.calculators.garnet.calculator.jlconvert") as mock_jlconvert,
+            patch("phasetools.calculators.garnet.calculator.GarnetMDFCalculator") as mdf_cls,
         ):
             helper = MagicMock()
             helper._owns_data = False
@@ -301,11 +301,11 @@ class TestGarnetGeneratorForwarding(unittest.TestCase):
     def test_generate_garnet_data_forwards_mdf(self):
         with (
             patch(
-                "phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__",
+                "phasetools.calculators.garnet.calculator.MAGEMinPTGridCalculator.__init__",
                 return_value=None,
             ),
             patch(
-                "phasetools.calculators.garnet.MAGEMinGarnetCalculator.gt_along_path"
+                "phasetools.calculators.garnet.calculator.MAGEMinGarnetCalculator.gt_along_path"
             ) as path_mock,
         ):
             gen = GarnetGenerator()

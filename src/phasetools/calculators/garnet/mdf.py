@@ -12,7 +12,6 @@ References
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-import re
 
 import numpy as np
 from juliacall import Main as jl
@@ -21,20 +20,19 @@ from scipy.optimize import minimize
 
 from phasetools import MAGEMin_C
 
-from ..core.base import MAGEMinBase
-from ..core.engine import evaluate_solution_phase_gibbs
-from ..core.phase_properties import phase_frac
-from ..core.thermodynamics import extract_gamma
-from ..utils.bulk_rock import atomic_mass_dict, get_molar_mass_dict
-from .garnet_composition import normalise_fe_basis, normalise_garnet_cations
+from ...core.base import MAGEMinBase
+from ...core.engine import evaluate_solution_phase_gibbs
+from ...core.phase_properties import phase_frac
+from ...core.thermodynamics import extract_gamma
+from .composition import (
+    _CATION_KEYS,
+    _validate_component_mapping,
+    garnet_endmember_fractions_to_oxide_wt,
+    garnet_fractions_to_mg_fe_mn_ca,
+    kho_aware_exchange_potentials,
+    normalise_fe_basis,
+)
 
-_DEFAULT_COMPONENTS = {
-    "pyrope": "py",
-    "almandine": "alm",
-    "spessartine": "spss",
-    "grossular": "gr",
-}
-_CATION_KEYS = ("Mg", "Fe", "Mn", "Ca")
 _FRACTION_FLOOR = 1.0e-12
 _PENALTY = 1.0e12
 
@@ -111,243 +109,6 @@ class GarnetMDFGridResult:
     matrix_assemblages: np.ndarray
     fe_basis: str = "FeOt"
     solver_mode: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=object))
-
-
-def kho_aware_exchange_potentials(
-    gamma: Mapping[str, float],
-    component_names: Mapping[str, str] | None = None,
-    *,
-    kho_name: str = "kho",
-) -> dict[str, float]:
-    """Project oxide Gamma onto exchange potentials relative to pyrope.
-
-    The divalent exchanges use ``3*(Gamma_MO-Gamma_MgO)``. For
-    ``Mg3Fe3+2Si3O12`` kho relative to pyrope is ``2 FeO + O - Al2O3`` on the
-    TC FeO + excess-O basis. The named oxide mapping makes the calculation
-    independent of Gamma vector ordering.
-
-    Parameters
-    ----------
-    gamma : mapping
-        MAGEMin oxide chemical potentials in kJ/mol oxide.
-    component_names : mapping, optional
-        Semantic roles to active garnet names. Defaults to py, alm, spss, gr.
-    kho_name : str, default='kho'
-        Active model name for the ferric endmember.
-
-    Returns
-    -------
-    dict[str, float]
-        Target exchange potential for every supplied non-reference
-        ``component_names`` role and kho, keyed by active endmember name.
-    """
-    roles = _validate_component_mapping(component_names)
-    values = {str(name): float(value) for name, value in gamma.items()}
-    if any(not np.isfinite(value) for value in values.values()):
-        raise ValueError("gamma values must be finite")
-    required = {"MgO", "FeO", "Al2O3", "O"}
-    if "spessartine" in roles:
-        required.add("MnO")
-    if "grossular" in roles:
-        required.add("CaO")
-    missing = required.difference(values)
-    if missing:
-        raise ValueError(
-            f"kho-aware matrix Gamma is missing required oxide(s): {sorted(missing)}"
-        )
-    result = {
-        roles["almandine"]: 3.0 * (values["FeO"] - values["MgO"]),
-        kho_name: 2.0 * values["FeO"] + values["O"] - values["Al2O3"],
-    }
-    if "spessartine" in roles:
-        result[roles["spessartine"]] = 3.0 * (values["MnO"] - values["MgO"])
-    if "grossular" in roles:
-        result[roles["grossular"]] = 3.0 * (values["CaO"] - values["MgO"])
-    return result
-
-
-def garnet_fractions_to_mg_fe_mn_ca(
-    fractions: Mapping[str, float],
-    *,
-    component_names: Mapping[str, str] | None = None,
-    kho_name: str = "kho",
-    fe_basis: str = "FeOt",
-) -> dict[str, float]:
-    """Convert supported garnet endmember fractions to closed cation ratios.
-
-    Each py/alm/spss/gr formula contributes three corresponding X-site
-    cations. Kho contributes three Mg and, on the ``FeOt`` basis, two total Fe
-    cations; it contributes no Fe on the ``Fe2+`` basis. Almandine contributes
-    three Fe on either basis. All four outputs are normalised to their joint
-    represented cation total.
-
-    Parameters
-    ----------
-    fractions : mapping
-        Garnet endmember names and their molar fractions.
-    component_names : mapping, optional
-        Semantic roles to active garnet names. Defaults to py, alm, spss, gr.
-    kho_name : str, default="kho"
-        Active model name for the ferric endmember.
-    fe_basis : {"FeOt", "Fe2+"}, default="FeOt"
-        Whether kho Fe is included in the closed cation projection.
-
-    Raises
-    ------
-    ValueError
-        If the basis or any supplied fraction is unsupported or invalid.
-    """
-    basis = normalise_fe_basis(fe_basis)
-    roles = _validate_component_mapping(component_names)
-    amounts = {key: 0.0 for key in _CATION_KEYS}
-    mapping = {
-        roles["pyrope"]: ("Mg", 3.0),
-        roles["almandine"]: ("Fe", 3.0),
-        roles["grossular"]: ("Ca", 3.0),
-    }
-    if "spessartine" in roles:
-        mapping[roles["spessartine"]] = ("Mn", 3.0)
-    mapping[kho_name] = ("Mg", 3.0)
-    for name, value in fractions.items():
-        amount = float(value)
-        if not np.isfinite(amount) or amount < 0.0:
-            raise ValueError("endmember fractions must be finite and non-negative")
-        if name not in mapping:
-            raise ValueError(
-                f"Unsupported garnet endmember {name!r}; cation projection "
-                "cannot validate an unrecognised component"
-            )
-        cation, coefficient = mapping[name]
-        amounts[cation] += coefficient * amount
-        if name == kho_name and basis == "FeOt":
-            amounts["Fe"] += 2.0 * amount
-    return normalise_garnet_cations(amounts)
-
-
-def garnet_endmember_fractions_to_oxide_wt(
-    fractions: Mapping[str, float],
-    endmember_names: Sequence[str],
-    em_comp_wt: np.ndarray,
-    em_comp_apfu: np.ndarray,
-    oxide_names: Sequence[str],
-) -> np.ndarray:
-    """Mix garnet endmember fractions into a full oxide weight-fraction vector.
-
-    Reconstructs the complete garnet oxide chemistry — every oxide the
-    solution model carries (SiO₂, Al₂O₃, MgO, FeO, MnO, CaO, and any
-    component O from ferric kho) — by mass-weighted mixing of MAGEMin's
-    per-endmember compositions.  The recipe is verified against
-    MAGEMin's own ``Comp_wt`` for equilibrium fractions to machine
-    precision: molar fractions are converted to mass fractions via
-    endmember molar masses (from ``em_comp_apfu`` atom counts × atomic
-    masses) *before* mixing, because normalised endmember rows carry
-    different numbers of oxide molecules per formula unit and do not
-    mix linearly on a molar basis.
-
-    Parameters
-    ----------
-    fractions : mapping
-        Endmember name → molar fraction (e.g. MDF solution or
-        equilibrium ``emFrac``).
-    endmember_names : sequence of str
-        Names ordering the rows of ``em_comp_wt``/``em_comp_apfu``.
-    em_comp_wt : numpy.ndarray
-        Per-endmember oxide composition, weight fractions, shape
-        ``(n_endmembers, n_oxides)``; rows sum to 1 (MAGEMin
-        ``SS_vec[i].emComp_wt``).
-    em_comp_apfu : numpy.ndarray
-        Per-endmember atom counts per formula unit, same shape
-        (MAGEMin ``SS_vec[i].emComp_apfu``; oxide columns hold atoms of
-        that oxide's element — e.g. Al₂O₃ column = 2 for pyrope —
-        plus a total-O column, giving exact endmember molar masses).
-    oxide_names : sequence of str
-        Oxide order of the output vector (the calculator's standardised
-        bulk oxide list).
-
-    Returns
-    -------
-    numpy.ndarray
-        Unit-sum oxide weight fractions aligned to ``oxide_names``.
-
-    Raises
-    ------
-    ValueError
-        If shapes are inconsistent, an endmember name is unknown, the
-        molar fractions are invalid, or any molar mass is non-positive.
-    """
-    names = tuple(str(name) for name in endmember_names)
-    oxides = tuple(str(oxide) for oxide in oxide_names)
-    comp_wt = np.asarray(em_comp_wt, dtype=float)
-    apfu = np.asarray(em_comp_apfu, dtype=float)
-    n_em, n_ox = len(names), len(oxides)
-    if comp_wt.shape != (n_em, n_ox) or apfu.shape != (n_em, n_ox):
-        raise ValueError(
-            f"endmember composition matrices must have shape "
-            f"({n_em}, {n_ox}); got {comp_wt.shape} and {apfu.shape}"
-        )
-    unknown = [key for key in fractions if str(key) not in names]
-    if unknown:
-        raise ValueError(
-            f"Unknown garnet endmember(s) {sorted(unknown)}; "
-            f"available names are {sorted(names)}"
-        )
-    f = np.array([float(fractions.get(name, 0.0)) for name in names])
-    if not np.all(np.isfinite(f)) or np.any(f < 0.0):
-        raise ValueError("endmember fractions must be finite and non-negative")
-
-    # Endmember molar masses: atom counts × atomic mass of each column's
-    # element (the leading element of the oxide formula).
-    masses = np.empty(n_ox)
-    for index, oxide in enumerate(oxides):
-        match = re.match(r"([A-Z][a-z]?)", oxide)
-        element = match.group(1) if match else None
-        if element is None or element not in atomic_mass_dict:
-            raise ValueError(f"Cannot derive an atomic mass for oxide {oxide!r}")
-        masses[index] = atomic_mass_dict[element]
-    endmember_mw = apfu @ masses
-    if not np.all(np.isfinite(endmember_mw)) or np.any(endmember_mw <= 0.0):
-        raise ValueError(
-            "Endmember molar masses must be positive; check emComp_apfu rows"
-        )
-
-    weights = f * endmember_mw
-    total = weights.sum()
-    if not np.isfinite(total) or total <= 0.0:
-        raise ValueError("Endmember fractions have no positive mass total")
-    weights = weights / total
-
-    oxide_wt = weights @ comp_wt
-    oxide_sum = oxide_wt.sum()
-    if not np.isfinite(oxide_sum) or oxide_sum <= 0.0:
-        raise ValueError("Mixed oxide composition has no positive total")
-    return oxide_wt / oxide_sum
-
-
-def _validate_component_mapping(
-    component_names: Mapping[str, str] | None,
-) -> dict[str, str]:
-    """Validate role names while allowing Mn to be absent from an active model."""
-    if component_names is None:
-        roles = dict(_DEFAULT_COMPONENTS)
-    else:
-        if not isinstance(component_names, Mapping):
-            raise TypeError("component_names must be a semantic-role mapping")
-        unknown = set(component_names).difference(_DEFAULT_COMPONENTS)
-        if unknown:
-            raise ValueError(f"Unsupported garnet component role(s): {sorted(unknown)}")
-        roles = {
-            role: str(component_names[role])
-            for role in _DEFAULT_COMPONENTS
-            if role in component_names
-        }
-    required = {"pyrope", "almandine", "grossular"}
-    if not required.issubset(roles):
-        raise ValueError("pyrope, almandine and grossular mappings are required")
-    if any(not name for name in roles.values()) or len(set(roles.values())) != len(
-        roles
-    ):
-        raise ValueError("component_names values must be non-empty and unique")
-    return roles
 
 
 class GarnetMDFCalculator(MAGEMinBase):

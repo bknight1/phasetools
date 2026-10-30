@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from phasetools.calculators.garnet import MAGEMinGarnetCalculator
-from phasetools.calculators.garnet_composition import (
+from phasetools.calculators.garnet.composition import (
     garnet_cations_from_apfu,
     normalise_fe_basis,
     normalise_garnet_cations,
@@ -38,7 +38,7 @@ class TestGarnetFeBasis(unittest.TestCase):
         out.ph = ['g', 'q']
         apfu = {'MgO': 0.6, 'MnO': 0.1, 'CaO': 0.8, 'FeO': 1.2, 'Fe2O3': 0.15}
         with patch(
-            'phasetools.calculators.garnet_composition.get_oxide_apfu',
+            'phasetools.calculators.garnet.composition.get_oxide_apfu',
             return_value=apfu,
         ):
             Mg, Mn, Fe, Ca = calc._extract_garnet_elements_from_oxides(out, 'mol')
@@ -59,11 +59,11 @@ class TestGarnetFeBasis(unittest.TestCase):
         split = {'Fe2': 1.35, 'Fe3': 0.15}
         with (
             patch(
-                'phasetools.calculators.garnet_composition.get_oxide_apfu',
+                'phasetools.calculators.garnet.composition.get_oxide_apfu',
                 return_value=apfu,
             ),
             patch(
-                'phasetools.calculators.garnet_composition.get_phase_fe_split',
+                'phasetools.calculators.garnet.composition.get_phase_fe_split',
                 return_value=split,
             ),
         ):
@@ -84,7 +84,7 @@ class TestGarnetFeBasis(unittest.TestCase):
     def test_invalid_basis_raises(self):
         """Unsupported fe_basis values must raise ValueError at construction."""
         with (
-            patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
+            patch('phasetools.calculators.garnet.calculator.MAGEMinPTGridCalculator.__init__',
                   return_value=None),
             self.assertRaises(ValueError),
         ):
@@ -92,7 +92,7 @@ class TestGarnetFeBasis(unittest.TestCase):
 
     def test_default_is_feot(self):
         """The default fe_basis is 'FeOt' (community convention)."""
-        with patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__',
+        with patch('phasetools.calculators.garnet.calculator.MAGEMinPTGridCalculator.__init__',
                    return_value=None):
             calc = MAGEMinGarnetCalculator(db='ig')
             self.assertEqual(calc.fe_basis, 'feot')
@@ -109,11 +109,11 @@ class TestGarnetFeBasis(unittest.TestCase):
         weight = {'Mg': 0.4, 'Fe': 0.3, 'Mn': 0.2, 'Ca': 0.1}
         with (
             patch(
-                'phasetools.calculators.garnet.garnet_cations_from_apfu',
+                'phasetools.calculators.garnet.calculator.garnet_cations_from_apfu',
                 return_value=atomic,
             ),
             patch(
-                'phasetools.calculators.garnet.atomic_frac_to_wt_frac',
+                'phasetools.calculators.garnet.calculator.atomic_frac_to_wt_frac',
                 return_value=weight,
             ) as convert,
         ):
@@ -150,11 +150,11 @@ class TestSharedGarnetComposition(unittest.TestCase):
         split = {'Fe2': 0.9, 'Fe3': 0.3}
         with (
             patch(
-                'phasetools.calculators.garnet_composition.get_oxide_apfu',
+                'phasetools.calculators.garnet.composition.get_oxide_apfu',
                 return_value=apfu,
             ),
             patch(
-                'phasetools.calculators.garnet_composition.get_phase_fe_split',
+                'phasetools.calculators.garnet.composition.get_phase_fe_split',
                 return_value=split,
             ),
         ):
@@ -185,9 +185,9 @@ class TestSharedGarnetComposition(unittest.TestCase):
 class TestWtFractionUsesWtBasis(unittest.TestCase):
     """Fix B: when sys_in='wt', fractionate_phase should use gt_wt, not gt_frac."""
 
-    @patch('phasetools.calculators.garnet.MAGEMin_C')
-    @patch('phasetools.calculators.garnet.jlconvert')
-    @patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__', return_value=None)
+    @patch('phasetools.calculators.garnet.calculator.MAGEMin_C')
+    @patch('phasetools.calculators.garnet.calculator.jlconvert')
+    @patch('phasetools.calculators.garnet.calculator.MAGEMinPTGridCalculator.__init__', return_value=None)
     def test_wt_fraction_uses_wt_basis(self, mock_grid_init, mock_jlconvert, mock_magemin):
         from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 
@@ -236,9 +236,9 @@ class TestWtFractionUsesWtBasis(unittest.TestCase):
 class TestXAlongPathNormalised(unittest.TestCase):
     """Fix D: each row of X_along_path must sum to 1.0."""
 
-    @patch('phasetools.calculators.garnet.MAGEMin_C')
-    @patch('phasetools.calculators.garnet.jlconvert')
-    @patch('phasetools.calculators.garnet.MAGEMinPTGridCalculator.__init__', return_value=None)
+    @patch('phasetools.calculators.garnet.calculator.MAGEMin_C')
+    @patch('phasetools.calculators.garnet.calculator.jlconvert')
+    @patch('phasetools.calculators.garnet.calculator.MAGEMinPTGridCalculator.__init__', return_value=None)
     def test_x_along_path_normalised_to_one(self, mock_grid_init, mock_jlconvert, mock_magemin):
         from phasetools.calculators.garnet import MAGEMinGarnetCalculator
 

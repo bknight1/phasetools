@@ -48,7 +48,7 @@ def _run(calc, points, fractionate=True, normalise_start=True):
     calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
     with (
         patch("phasetools.calculators.phase_search.PhaseFunctions") as pf_cls,
-        patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
+        patch("phasetools.calculators.garnet.calculator.jlconvert") as mock_jlconvert,
     ):
         pf_cls.fractionate_phase = MagicMock(return_value=np.array([50.0, 50.0]))
         mock_jlconvert.side_effect = lambda t, v: np.array(v, dtype=float)
@@ -175,7 +175,7 @@ class TestNoFractionationUnchanged(unittest.TestCase):
         calc._gt_single_point_from_jl = MagicMock(side_effect=list(points))
         with (
             patch("phasetools.calculators.phase_search.PhaseFunctions") as pf_cls,
-            patch("phasetools.calculators.garnet.jlconvert") as mock_jlconvert,
+            patch("phasetools.calculators.garnet.calculator.jlconvert") as mock_jlconvert,
         ):
             mock_jlconvert.side_effect = lambda t, v: np.array(v, dtype=float)
             P = np.array([10.0, 11.0])

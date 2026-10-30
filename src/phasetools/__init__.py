@@ -61,11 +61,11 @@ __all__ = [
 
 # Expose Public API
 from .calculators.assemblage import MAGEMinAssemblageCalculator
-from .calculators.garnet import MAGEMinGarnetCalculator
-from .calculators.garnet_mdf import (
+from .calculators.garnet import (
     GarnetMDFCalculator,
     GarnetMDFGridResult,
     GarnetMDFResult,
+    MAGEMinGarnetCalculator,
     garnet_fractions_to_mg_fe_mn_ca,
     kho_aware_exchange_potentials,
 )

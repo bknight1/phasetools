@@ -7,8 +7,8 @@ from unittest.mock import patch
 import numpy as np
 
 import phasetools
-from phasetools.calculators.garnet_composition import normalise_garnet_cations
-from phasetools.calculators.garnet_mdf import (
+from phasetools.calculators.garnet.composition import normalise_garnet_cations
+from phasetools.calculators.garnet.mdf import (
     GarnetMDFCalculator,
     GarnetMDFResult,
     garnet_fractions_to_mg_fe_mn_ca,
@@ -85,7 +85,7 @@ class TestKhoAwareProjections(unittest.TestCase):
     def test_endmember_projection_uses_shared_cation_normaliser(self):
         fractions = {"py": 0.2, "alm": 0.4, "spss": 0.1, "gr": 0.2, "kho": 0.1}
         with patch(
-            "phasetools.calculators.garnet_mdf.normalise_garnet_cations",
+            "phasetools.calculators.garnet.composition.normalise_garnet_cations",
             wraps=normalise_garnet_cations,
         ) as normalise:
             composition = garnet_fractions_to_mg_fe_mn_ca(fractions)
@@ -246,7 +246,7 @@ class TestKhoAwareProjections(unittest.TestCase):
             return project(*args, **kwargs)
 
         with patch(
-            "phasetools.calculators.garnet_mdf.garnet_fractions_to_mg_fe_mn_ca",
+            "phasetools.calculators.garnet.mdf.garnet_fractions_to_mg_fe_mn_ca",
             side_effect=record_projection,
         ):
             result = calc.calculate_compositions(10.0, 600.0, fe_basis="Fe2+")
@@ -358,7 +358,7 @@ class TestKhoAwareProjections(unittest.TestCase):
             return SimpleNamespace(valid=True, mu=(0.0, 3.0, 9.0))
 
         with patch(
-            "phasetools.calculators.garnet_mdf.evaluate_solution_phase_gibbs",
+            "phasetools.calculators.garnet.mdf.evaluate_solution_phase_gibbs",
             side_effect=evaluate,
         ):
             fractions, _residual, _norm, _converged, _message = (
@@ -394,7 +394,7 @@ class TestKhoAwareProjections(unittest.TestCase):
 
         gamma = {"MgO": 0.0, "FeO": 1.0, "MnO": 2.0, "CaO": 3.0}
         with patch(
-            "phasetools.calculators.garnet_mdf.evaluate_solution_phase_gibbs",
+            "phasetools.calculators.garnet.mdf.evaluate_solution_phase_gibbs",
             side_effect=evaluate,
         ):
             fractions, residual, norm, converged, _message = calc.solve_restricted_mdf(
@@ -447,7 +447,7 @@ class TestKhoAwareProjections(unittest.TestCase):
         )
         calc.discover_garnet_endmembers = lambda _output: None
         with patch(
-            "phasetools.calculators.garnet_mdf.extract_gamma",
+            "phasetools.calculators.garnet.mdf.extract_gamma",
             return_value=(3.0, 4.0),
         ):
             output, gamma, phases = calc.calculate_matrix_state(10.0, 600.0)
@@ -468,11 +468,11 @@ class TestKhoAwareProjections(unittest.TestCase):
         calc.rm_list = object()
         with (
             patch(
-                "phasetools.calculators.garnet_mdf.jlconvert",
+                "phasetools.calculators.garnet.mdf.jlconvert",
                 side_effect=lambda _type, value: value,
             ),
             patch(
-                "phasetools.calculators.garnet_mdf.MAGEMin_C",
+                "phasetools.calculators.garnet.mdf.MAGEMin_C",
                 SimpleNamespace(
                     single_point_minimization=lambda *args, **kwargs: (
                         "output",
@@ -555,7 +555,7 @@ class TestKhoAwareProjections(unittest.TestCase):
         gamma = {"MgO": 1.0, "FeO": 4.0, "CaO": 8.0, "Al2O3": 2.0, "O": 7.0}
         # alm=9, gr=21, kho=13; mu exchanges are 9, 21, 13.
         with patch(
-            "phasetools.calculators.garnet_mdf.evaluate_solution_phase_gibbs",
+            "phasetools.calculators.garnet.mdf.evaluate_solution_phase_gibbs",
             side_effect=fake_eval,
         ):
             residual = calc._mdf_residual(

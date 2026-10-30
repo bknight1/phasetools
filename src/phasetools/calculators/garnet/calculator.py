@@ -1,6 +1,5 @@
 import sys
 import warnings
-from collections.abc import Mapping
 
 import numpy as np
 from juliacall import Main as jl
@@ -8,15 +7,15 @@ from juliacall import convert as jlconvert
 
 from phasetools import MAGEMin_C
 
-from ..core.phase_properties import phase_frac
-from ..utils.bulk_rock import (
+from ...core.phase_properties import phase_frac
+from ...utils.bulk_rock import (
     atomic_frac_to_wt_frac,
     atomic_mass_dict,
     get_molar_mass_dict,
 )
-from .garnet_composition import garnet_cations_from_apfu, normalise_fe_basis
-from .garnet_mdf import GarnetMDFCalculator
-from .pt_grid import MAGEMinPTGridCalculator
+from ..pt_grid import MAGEMinPTGridCalculator
+from .composition import garnet_cations_from_apfu, normalise_fe_basis
+from .mdf import GarnetMDFCalculator
 
 
 class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
@@ -200,7 +199,7 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
             and (with ``fractionate=True``) the composition removed at each
             step come from the maximum-driving-force / parallel-tangent
             (MDF/PTM) solve on that step's reactive bulk
-            (:class:`~phasetools.calculators.garnet_mdf.GarnetMDFCalculator`),
+            (:class:`~phasetools.calculators.garnet.mdf.GarnetMDFCalculator`),
             while the garnet *amounts* (modes, ``frac_amount``, the pile
             curves) remain equilibrium — MDF itself has no mode.  The MDF
             route is provisional for now and its behaviour (supply capping,
@@ -258,7 +257,7 @@ class MAGEMinGarnetCalculator(MAGEMinPTGridCalculator):
         first-order for a small seed.  Basis conversion of each removal into
         the mol/wt/vol pile curves uses that step's equilibrium mode ratios.
         """
-        from .phase_search import PhaseFunctions
+        from ..phase_search import PhaseFunctions
 
         mdf_calc = None
         if mdf:

@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from phasetools import MAGEMin_C
-from phasetools.calculators.garnet_mdf import (
+from phasetools.calculators.garnet.mdf import (
     GarnetMDFCalculator,
     kho_aware_exchange_potentials,
 )
