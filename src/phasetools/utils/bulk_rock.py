@@ -68,6 +68,10 @@ def atomic_frac_to_wt_frac(atomic_frac: dict[str, float], mass_dict: dict[str, f
         Weight-based fractions (summing to 1.0).
     """
     total_mass = sum(atomic_frac[k] * mass_dict[k] for k in atomic_frac)
+    if total_mass == 0:
+        # All-zero input (e.g. an absent phase reported as zero cations):
+        # keep the proportions at zero rather than dividing by zero.
+        return {k: 0.0 for k in atomic_frac}
     return {k: atomic_frac[k] * mass_dict[k] / total_mass for k in atomic_frac}
 
 
