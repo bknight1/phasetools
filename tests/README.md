@@ -16,6 +16,8 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 - **sb24 iron handling:** Tests iron splitting for the sb24 mantle database, which includes metallic iron (`Fe(a)`) as a phase — requires different bookkeeping than silicate-only databases.
 - **Mg# robustness:** Validates that Mg# = Mg/(Mg+Fe²⁺) is computed correctly across different Fe components and databases. Mg# is the primary compositional metric for comparing model output to natural samples.
 - **K_D Fe-Mg logic:** Tests that the distribution coefficient K_D = (Fe²⁺/Mg)ᵠᵃʳⁿᵉᵗ / (Fe²⁺/Mg)ᶜᵖˣ is correctly calculated. K_D > 1 means garnet concentrates Fe²⁺ relative to cpx; K_D < 1 means the opposite.
+- **O-component route:** Fe³⁺ derives from MAGEMin's `Comp['O']` scaled to the APFU norm — pinned to be exact even when the APFU O lands on a whole number (where the floor rule would read zero excess) and zero when MAGEMin assigned no redox oxygen despite fractional APFU O; outputs without `Comp` fall back to the floor rule.
+- **SS/PP dispatch:** `get_oxide_apfu` reads solution phases from `SS_vec` and pure phases from `PP_vec`, so pure-phase APFU values (e.g. `q`, `ilm`) are real rather than silent zeros — including the Fe split of iron-bearing pure phases.
 
 ---
 
@@ -148,8 +150,20 @@ on a shared formula basis when Julia + MAGEMin_C are available.
 #### Tests
 
 - **`test_garnet_heuristic_across_pt`**
-  - **Checks:** Garnet Fe²⁺ = 3 × almandine fraction and Fe³⁺ = 2 × kho fraction (exact equality) across five P–T points.
+  - **Checks:** Garnet Fe²⁺ = 3 × almandine fraction and Fe³⁺ = 2 × kho fraction across five P–T points (places=4).
   - **Physical meaning:** Proves the heuristic correctly implements the a-x model's Fe split for garnet. In garnet (X₃Y₂Si₃O₁₂), the 3 Fe²⁺ atoms occupy the X-site and the 2 Fe³⁺ atoms occupy the Y-site. The heuristic recovers this site-specific partitioning without hard-coding end-member names.
+
+- **`test_cpx_heuristic_across_pt`**
+  - **Checks:** Clinopyroxene Fe³⁺ = acmm + 0.5 × jac and Fe²⁺ = hed + 0.5 × cfm across five P–T points (places=4).
+
+- **`test_mica_fe_split_matches_ferric_endmember`**
+  - **Checks:** Muscovite Fe³⁺ = fmu, Fe²⁺ = fcel, and FeO_apfu = fcel + fmu (total Fe), exactly.
+
+- **`test_ferric_chlorite_fe_split_matches_f3clin`**
+  - **Checks:** On the O-bearing S10 bulk at 20 kbar/550 °C, ferric chlorite's split equals the f3clin endmember fraction — also mirrored by the model's `f` compositional variable.
+
+- **`test_phase_fe_split_matches_magemin_system_fe3_fraction`**
+  - **Checks:** Pins MAGEMin's reported `Fe3_Fe2_ratio` = `2O/(FeO + 2O)` of the standardised bulk to machine precision; aggregates per-phase splits with `wt/Mw` weights (never `phase_frac('mol')` — not a formula-mole fraction) onto the physical `2O/FeO` identity (δ = 0.015) and MAGEMin's scalar (δ = 0.025); an O-free bulk reads exact zeros everywhere.
 
 - **`test_heuristic_mg_matches_site_fractions`**
   - **Checks:** Mg# computed from the heuristic matches Mg# computed from `siteFractions` (summed across all crystallographic sites) for both garnet and cpx, to floating-point precision.

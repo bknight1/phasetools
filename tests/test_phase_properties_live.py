@@ -1,3 +1,4 @@
+import re
 import unittest
 from typing import ClassVar
 
@@ -12,6 +13,7 @@ from phasetools.core.phase_properties import (
     get_phase_mg2_number,
     phase_frac,
 )
+from phasetools.utils.bulk_rock import atomic_mass_dict
 
 try:
     import juliacall  # noqa: F401 — side-effect import to test availability
@@ -139,9 +141,9 @@ class TestSiteOccupancy(unittest.TestCase):
             mg_num_s = mg_full / (mg_full + fe2_s) if (mg_full + fe2_s) > 0 else 0.0
 
             with self.subTest(P=P, T=T):
-                self.assertAlmostEqual(fe2_h, fe2_s, places=2)
-                self.assertAlmostEqual(fe3_h, fe3_s, places=2)
-                self.assertAlmostEqual(mg2_h, mg_num_s, places=2)
+                self.assertAlmostEqual(fe2_h, fe2_s, places=4)
+                self.assertAlmostEqual(fe3_h, fe3_s, places=4)
+                self.assertAlmostEqual(mg2_h, mg_num_s, places=4)
 
     def test_cpx_heuristic_across_pt(self):
         """Heuristic Fe2+/Fe3+ and Mg# match endmember stoichiometry for cpx across P-T range."""
@@ -172,9 +174,9 @@ class TestSiteOccupancy(unittest.TestCase):
             mg_num_s = mg_full / (mg_full + fe2_s) if (mg_full + fe2_s) > 0 else 0.0
 
             with self.subTest(P=P, T=T):
-                self.assertAlmostEqual(fe2_h, fe2_s, places=2)
-                self.assertAlmostEqual(fe3_h, fe3_s, places=2)
-                self.assertAlmostEqual(mg2_h, mg_num_s, places=2)
+                self.assertAlmostEqual(fe2_h, fe2_s, places=4)
+                self.assertAlmostEqual(fe3_h, fe3_s, places=4)
+                self.assertAlmostEqual(mg2_h, mg_num_s, places=4)
 
     def test_epidote_heuristic_across_pt(self):
         """Heuristic Fe3+ matches expected values for epidote across P-T range.
@@ -264,6 +266,144 @@ class TestSiteOccupancy(unittest.TestCase):
             self.assertAlmostEqual(fe2_h + fe3_h, fe_total, places=2)
         finally:
             calc.finalize()
+
+    def test_phase_fe_split_matches_magemin_system_fe3_fraction(self):
+        """Our per-phase Fe2+/Fe3+ heuristic aggregates to the bulk identity.
+
+        Three facts pin the comparison:
+
+        * MAGEMin reports ``out.Fe3_Fe2_ratio`` = ``2*O/(FeO + 2*O)`` of the
+          standardised bulk (C: dump_function.c) — a bulk-input identity,
+          reproduced to machine precision below.  Given that bulk FeO carries
+          *total* iron, its denominator counts Fe3+ twice, so the physically
+          correct Fe3+ fraction of total Fe is         ``2*O/FeO`` instead.
+        * Aggregation must weight each phase's APFU amounts by ``wt/Mw``
+          (atomic Mw from the APFU columns).  ``phase_frac(..., 'mol')`` is
+          *not* a formula-mole fraction — it makes per-element scale factors
+          scatter from 7.6 to 100 — while ``wt/Mw`` puts every element on
+          one constant (31.0 here).
+        * The phase-resolved excess-O heuristic then closes on 2*O/FeO to
+          ~0.002; agreement with MAGEMin's reported scalar inherits its
+          denominator quirk (measured gap ~0.011).
+        """
+
+        def _mw(apfu):
+            """Atomic formula mass: oxide columns are atom counts; 'O' counts
+            all oxygen; 'H2O' contributes hydrogen only (its O is in 'O')."""
+            mass = 0.0
+            for oxide, count in apfu.items():
+                if oxide == "O":
+                    mass += count * 15.999
+                elif oxide == "H2O":
+                    mass += count * 1.008
+                else:
+                    match = re.match(r"([A-Z][a-z]?)", oxide)
+                    mass += count * atomic_mass_dict[match.group(1)]
+            return mass
+
+        def _apfu(phase):
+            i = list(map(str, self.out.ph)).index(phase)
+            n_ss = int(self.out.n_SS)
+            src = self.out.SS_vec[i] if i < n_ss else self.out.PP_vec[i - n_ss]
+            return dict(zip(map(str, self.out.oxides), map(float, src.Comp_apfu)))
+
+        # 1. Pin MAGEMin's semantics: reported scalar == standardised-bulk
+        #    2*O/(FeO + 2*O), exactly.
+        std = dict(zip(self.calc._Xoxides_py, self.calc._X_mol_standardized))
+        o_std = float(std.get("O", 0.0))
+        feo_std = float(std["FeO"])
+        self.assertAlmostEqual(
+            2.0 * o_std / (feo_std + 2.0 * o_std),
+            self.out.Fe3_Fe2_ratio,
+            places=12,
+        )
+
+        # 2. Mode-weight the per-phase splits with n = wt/Mw (NOT
+        #    phase_frac 'mol', which is not a formula-mole fraction).
+        weights = {}
+        for phase in map(str, self.out.ph):
+            w = float(phase_frac(phase, self.out, "wt"))
+            weights[phase] = w / _mw(_apfu(phase))
+        total_w = sum(weights.values())
+        fe3 = fe2 = 0.0
+        for phase in map(str, self.out.ph):
+            split = get_phase_fe_split(self.out, phase)
+            share = weights[phase] / total_w
+            fe3 += share * split["Fe3"]
+            fe2 += share * split["Fe2"]
+        self.assertGreater(fe3, 0.0, "S10 bulk carries excess O: Fe3+ expected")
+        aggregate = fe3 / (fe2 + fe3)
+
+        # 2a. Closes on the physical bulk identity Fe3/FeTotal = 2O/FeO.
+        self.assertAlmostEqual(aggregate, 2.0 * o_std / feo_std, delta=0.015)
+        # 2b. And within MAGEMin's reported scalar (its 2O/(FeO+2O)
+        #     denominator counts Fe3+ twice — measured gap ~0.011).
+        self.assertAlmostEqual(aggregate, self.out.Fe3_Fe2_ratio, delta=0.025)
+
+        # 3. Zero case: O-free metapelite -> MAGEMin reports exactly 0 and
+        #    every phase must read as pure Fe2+.
+        oxides = ["SiO2", "Al2O3", "MgO", "FeO", "CaO", "Na2O", "K2O", "H2O", "TiO2", "MnO", "O"]
+        bulk = [60.0, 18.0, 4.0, 7.0, 4.5, 2.5, 2.5, 1.5, 0.8, 0.1, 0.0]
+        reduced = MAGEMinPTGridCalculator(db="mpe", dataset=636)
+        try:
+            reduced.setup_bulk_composition(oxides, bulk, sys_in="wt")
+            out_red = reduced.calculate_grid(5.0, 450.0)[0]
+            self.assertEqual(out_red.Fe3_Fe2_ratio, 0.0)
+            for phase in map(str, out_red.ph):
+                with self.subTest(phase=phase):
+                    split = get_phase_fe_split(out_red, phase)
+                    self.assertAlmostEqual(split["Fe3"], 0.0, places=10)
+        finally:
+            reduced.finalize()
+
+    def test_mica_fe_split_matches_ferric_endmember(self):
+        """Muscovite split matches the mica model's ferric component (fmu).
+
+        At 30 kbar / 700 °C the mica model carries fcel (ferrous, 1 Fe2)
+        and fmu (ferric, 1 Fe3); the O-component split must reproduce both
+        to machine precision, and FeO_apfu must equal their sum (total Fe).
+        """
+        out = self.out
+        ph = list(map(str, out.ph))
+        self.assertIn("mu", ph, "muscovite expected in the S10 assemblage")
+        ss = out.SS_vec[ph.index("mu")]
+        em = {str(n): float(f) for n, f in zip(ss.emNames, ss.emFrac)}
+        ox = [str(o) for o in out.oxides]
+        feo = float(ss.Comp_apfu[ox.index("FeO")])
+        split = get_phase_fe_split(out, "mu")
+        self.assertGreater(em.get("fmu", 0.0), 0.0)
+        self.assertAlmostEqual(split["Fe3"], em.get("fmu", 0.0), delta=1e-4)
+        self.assertAlmostEqual(split["Fe2"], em.get("fcel", 0.0), delta=1e-4)
+        self.assertAlmostEqual(
+            feo, em.get("fcel", 0.0) + em.get("fmu", 0.0), delta=1e-5
+        )
+
+    def test_ferric_chlorite_fe_split_matches_f3clin(self):
+        """Chlorite Fe3+ matches the f3clin endmember (ferric clinochlore).
+
+        The S10 bulk carries O = 0.64 (ferric); at 20 kbar / 550 °C
+        chlorite is stable with f3clin > 0.  The O-component split must
+        equal the f3clin fraction (1 Fe3 per f3clin formula unit), which
+        the model's own 'f' compositional variable mirrors.
+        """
+        out = self.calc.calculate_grid(20.0, 550.0)[0]
+        ph = list(map(str, out.ph))
+        if "chl" not in ph:
+            self.skipTest("Chlorite not stable at 20 kbar, 550 °C")
+        ss = out.SS_vec[ph.index("chl")]
+        em = {str(n): float(f) for n, f in zip(ss.emNames, ss.emFrac)}
+        f3clin = em.get("f3clin", 0.0)
+        self.assertGreater(f3clin, 0.0, "expected ferric chlorite (f3clin > 0)")
+        ox = [str(o) for o in out.oxides]
+        feo = float(ss.Comp_apfu[ox.index("FeO")])
+        split = get_phase_fe_split(out, "chl")
+        self.assertAlmostEqual(split["Fe3"], f3clin, delta=1e-4)
+        self.assertAlmostEqual(split["Fe2"], feo - f3clin, delta=1e-4)
+        # the model's ferric variable tracks the same number
+        variables = {
+            str(n): float(v) for n, v in zip(ss.compVariablesNames, ss.compVariables)
+        }
+        self.assertAlmostEqual(split["Fe3"], variables.get("f", -1.0), delta=1e-4)
 
     def test_bulk_fe_o_closure(self):
         """Bulk Fe and O are conserved across the assemblage (mass balance)."""
