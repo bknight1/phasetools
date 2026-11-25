@@ -26,16 +26,20 @@ src/phasetools/
   julia_setup.py     — CLI for phasetools-julia-setup (check/install Julia + MAGEMin_C)
   core/
     base.py          — MAGEMinBase (parent class for all calculators/models)
-    engine.py        — single_point_minimization_with_conversion (Python→Julia bridge)
+    engine.py        — Python→Julia bridge and generic solution-phase Gibbs evaluation
+    thermodynamics.py — generic extraction of MAGEMin thermodynamic diagnostics
     phase_properties.py  — phase_frac, extract_end_member, get_oxide_apfu,
                            get_phase_chemistry, get_phase_mg_number,
                            get_phase_mg2_number, get_phase_fe_split,
                            calculate_kd_fe_mg
   calculators/
     pt_grid.py       — MAGEMinPTGridCalculator (multi-point P-T grids)
-    garnet.py        — MAGEMinGarnetCalculator (garnet-focused wrappers)
+    garnet/          — garnet domain package
+      calculator.py    — MAGEMinGarnetCalculator (garnet-focused wrappers, gt_along_path)
+      mdf.py           — GarnetMDFCalculator and closed Mg-Fe(total)-Mn-Ca cation output
+      composition.py   — cation conversions, closed projections, MDF endmember/oxide mixing
     phase_search.py  — PhaseFunctions (solidus/liquidus root-finding)
-    pt_estimation.py — PhasePTEstimator (geothermobarometry)
+    pt_estimation.py — PhasePTEstimator (geothermobarometry) and shared optimize_pt()
     assemblage.py    — MAGEMinAssemblageCalculator (stability masks)
   models/
     garnet_growth.py — GarnetGenerator, generate_distribution
@@ -47,6 +51,9 @@ src/phasetools/
                        split_feot_to_feo_o / express_bulk_in_feo_o_basis
                        (FeOt→FeO+O split at a target Fe³⁺/FeOt, conserving FeOt)
     general.py       — PCHIP interpolation helpers
+
+Tutorials/Garnet/
+  MDF_single_point_workflow.ipynb — single-point equilibrium and garnet MDF/PTM workflow
 ```
 
 ## Conventions (must follow)
@@ -69,7 +76,7 @@ from juliacall import Main as jl, convert as jlconvert
 - **Avoid double-converting** objects already in Julia format — verify the `juliacall` wrapper.
 - Initialise once and **reuse the `data` handle**:
   `data = MAGEMin_C.Initialize_MAGEMin("ig", verbose=False)`
-- Share state across instances: `self._copy_state_to(other)` transfers standardised Julia objects.
+- Share state across instances: `self._copy_state_to(other)` transfers standardised Julia objects plus `db`/`dataset`/`verbose`; `other` becomes a non-owner of the shared handle. Call `finalize()` on the **owning** instance when finished — Julia GC never frees the ~40 MB C-side MAGEMin allocation. Non-owners warn and skip `finalize()`.
 
 ## Databases
 
@@ -90,6 +97,16 @@ from juliacall import Main as jl, convert as jlconvert
 - **`mpe`**: mp + mb (cross-lithology metapelite)
 - **`mbe`**: mb + high-pressure models
 - **`ume`**: um + mb (mantle-crust interactions)
+
+### Database references
+
+- **Metapelite (mp/mpe):** White et al. (2014), *J. Metamorph. Geol.*, 32, 261-286.
+- **Metabasite (mb/mbe):** Green et al. (2016), *J. Metamorph. Geol.*, 34, 845-869.
+- **Ultramafic (um/ume):** Evans & Frost (2021), *J. Petrol.*, 62(3), egab016.
+- **Igneous (ig):** Green et al. (2025), *J. Petrol.*, 66, egae079.
+- **Igneous Alkaline (igad):** Weller et al. (2024), *J. Petrol.*, 65, egae098.
+- **Mantle (mtl):** Holland et al. (2013), *J. Petrol.*, 54, 1901-1920.
+- **Mantle (sb11/21/24):** Stixrude & Lithgow-Bertelloni (2011/2021/2024), *Geophys. J. Int.*
 
 ### Applicability warning
 
@@ -123,7 +140,7 @@ x_mol_jl, xox_mol_jl = MAGEMin_C.convertBulk4MAGEMin(x_jl, ox_jl, "wt", db)
 
 - MAGEMin uses **FeO + O (excess oxygen)** basis for most databases (`ig`, `mp`, etc.).
 - `1 mol Fe2O3 → 2 mol FeO + 1 mol O`
-- `get_phase_fe_split(out, phase)` for heuristic Fe²⁺/Fe³⁺ partitioning.
+- `get_phase_fe_split(out, phase)` for Fe²⁺/Fe³⁺ partitioning. On O-basis databases the ferric amount comes from MAGEMin's O component (`Comp['O']` scaled to the APFU norm — exact at any excess; integer-floor fallback only for outputs without `Comp`), and `FeO` carries *total* iron, so `Fe²⁺ = FeO − Fe³⁺`. `get_oxide_apfu` follows MAGEMin's `out.ph` layout: solution phases from `SS_vec`, pure phases from `PP_vec` (pure-phase APFU values are real, not zeros).
 - `get_phase_mg_number` atomic across Fe, FeO, Fe2O3 components.
 - `calculate_kd_fe_mg(out, phase1, phase2)` for distribution coefficients.
 - **Garnet X-site fractions default to FeOt** (all Fe as Fe²⁺): `MAGEMinGarnetCalculator` / `GarnetGenerator` take a `fe_basis` argument (`'FeOt'` default, `'Fe2+'` for the stoichiometric ferrous-only split). FeOt is the community convention for garnet end-members (e.g. Williams & Grambling 1990; Krogh Ravna 2000); use `'Fe2+'` only when garnet Fe³⁺ is known to be significant.
@@ -201,7 +218,7 @@ Since endmembers are just oxide arrays in the database, APFU already encodes the
 ## Calculator API patterns
 
 - **PTGrid**: `calculate_grid(P, T)` → `extract_from_grid(phase, end_members='auto')`
-- **Garnet**: `gt_along_path(P, T, fractionate=True)` for evolution with zoning; X-site normalisation isolates Fe²⁺.
+- **Garnet**: `gt_along_path(P, T, fractionate=True, mdf=True)` for evolution with zoning; `mdf=True` reports/segregates the maximum-driving-force composition (amounts stay equilibrium) with supply-capping and non-convergence warnings; X-site normalisation isolates Fe²⁺.
 - **PTEstimator**: wraps `scipy.optimize` (global: `differential_evolution`, `dual_annealing`; local: `shgo`, `minimize`).
 - **Assemblage**: returns boolean stability masks for requested phase coexistence.
 - **PhaseSearch**: uses `scipy.optimize.root_scalar` with P,T brackets for solidus/liquidus.
@@ -288,7 +305,7 @@ The `ox.count("O")` bug undercounts oxygen, inflating the6-O scale factor by ~60
 
 - **unittest**, mock-based (`unittest.mock.patch`), **no live Julia runtime** needed.
 - Run: `python3 -m unittest discover tests`
-- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fe_basis.py`, `test_fractionation.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`.
+- Files: `test_redox_logic.py`, `test_site_occupancy.py`, `test_fractionation.py`, `test_gt_along_path_mdf.py`, `test_iron_oxide_conversions.py`, `test_solvus_instances.py`, `test_lmo_fix.py`, `test_state.py` (plus phase/feature files documented in `tests/README.md`).
 - New public functions must be documented in the **directory's README.md** (e.g., `calculators/README.md`, `core/README.md`) **and** the package structure above must be updated.
 
 ## Requirements (from `pyproject.toml`)

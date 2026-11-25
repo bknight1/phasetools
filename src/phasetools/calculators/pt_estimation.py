@@ -1,10 +1,106 @@
+from collections.abc import Callable, Sequence
+
 import numpy as np
 from scipy import optimize
+from scipy.optimize import OptimizeResult
 
 import phasetools
 
 from ..core.base import MAGEMinBase
 from ..core.phase_properties import extract_end_member, get_oxide_apfu
+
+
+def optimize_pt(
+    objective: Callable[[np.ndarray], float],
+    bounds: list[tuple[float, float]],
+    method: str = "differential_evolution",
+    x0: list[float] | None = None,
+    uncertainty: np.ndarray | None = None,
+    return_path: bool = False,
+    quick: bool = False,
+    **kwargs: object,
+) -> OptimizeResult:
+    """Minimise an objective over pressure and temperature.
+
+    Parameters
+    ----------
+    objective : callable
+        Function accepting a two-element ``[P, T]`` array and returning a
+        scalar misfit. Any uncertainty weighting belongs in this callable;
+        ``uncertainty`` is accepted for API compatibility with P-T callers.
+    bounds : list of tuple of float
+        Pressure and temperature limits, in kbar and °C respectively.
+    method : str, default='differential_evolution'
+        A SciPy global method (``differential_evolution``, ``dual_annealing``
+        or ``shgo``), or a method supported by ``scipy.optimize.minimize``.
+    x0 : list of float, optional
+        Initial P-T estimate for local methods. Defaults to the bounds midpoint.
+    uncertainty : ndarray, optional
+        Reserved for call-site compatibility; apply uncertainty weights inside
+        ``objective`` so it remains a one-argument callable.
+    return_path : bool, default=False
+        Attach accepted optimizer callback points as ``result.path``.
+    quick : bool, default=False
+        Use reduced global-search effort.
+    **kwargs
+        Additional keyword arguments passed to the selected SciPy optimiser.
+
+    Returns
+    -------
+    scipy.optimize.OptimizeResult
+        Optimisation result with ``x`` ordered as ``[P, T]`` and ``fun`` as
+        the objective misfit. If requested, ``path`` contains callback points.
+
+    Raises
+    ------
+    ValueError
+        If the bounds do not describe a pressure-temperature pair.
+    """
+    del uncertainty  # Weighting is objective-specific and belongs in its closure.
+    if len(bounds) != 2:
+        raise ValueError("bounds must contain exactly (P_bounds, T_bounds)")
+
+    path: list[np.ndarray] = []
+
+    def callback(x: Sequence[float], *args: object) -> None:
+        del args
+        path.append(np.asarray(x, dtype=float).copy())
+
+    if method == "differential_evolution":
+        params: dict[str, object] = {
+            "strategy": "best1bin", "popsize": 10, "tol": 0.01, "polish": True,
+        }
+        if quick:
+            params.update({"popsize": 5, "tol": 0.1, "polish": False})
+        if return_path:
+            params["callback"] = callback
+        params.update(kwargs)
+        result = optimize.differential_evolution(objective, bounds=bounds, **params)
+    elif method == "dual_annealing":
+        params = {"maxiter": 50 if quick else 1000}
+        if return_path:
+            params["callback"] = lambda x, _f, _context: path.append(
+                np.asarray(x, dtype=float).copy()
+            )
+        params.update(kwargs)
+        result = optimize.dual_annealing(objective, bounds=bounds, **params)
+    elif method == "shgo":
+        params = {"n": 32, "iters": 1} if quick else {}
+        if return_path:
+            params["callback"] = callback
+        params.update(kwargs)
+        result = optimize.shgo(objective, bounds=bounds, **params)
+    else:
+        initial = x0 if x0 is not None else [float(np.mean(bound)) for bound in bounds]
+        params = {"method": method, "bounds": bounds}
+        if return_path:
+            params["callback"] = callback
+        params.update(kwargs)
+        result = optimize.minimize(objective, x0=initial, **params)
+
+    if return_path:
+        result.path = np.asarray(path, dtype=float).reshape((-1, 2))
+    return result
 
 
 class PhasePTEstimator(MAGEMinBase):
@@ -71,46 +167,21 @@ class PhasePTEstimator(MAGEMinBase):
         If return_path=True, the OptimizeResult object will include a .path attribute 
         containing the history of the best solutions found during the search.
         """
-        args = (target_chemistry, phase, components, comp_type, uncertainty)
-        path = []
+        def objective(pt: np.ndarray) -> float:
+            return self.calculate_misfit(
+                pt, target_chemistry, phase, components, comp_type, uncertainty
+            )
 
-        def callback(x, *args):
-            path.append(np.array(x).copy())
-
-        # 1. Global Solvers
-        if method == 'differential_evolution':
-            de_params = {'strategy': 'best1bin', 'popsize': 10, 'tol': 0.01, 'polish': True}
-            if quick: de_params.update({'popsize': 5, 'tol': 0.1, 'polish': False})
-            if return_path: de_params['callback'] = callback
-            de_params.update(kwargs)
-            res = optimize.differential_evolution(self.calculate_misfit, bounds=bounds, args=args, **de_params)
-
-        elif method == 'dual_annealing':
-            da_params = {'maxiter': 1000}
-            if quick: da_params.update({'maxiter': 50})
-            if return_path: da_params['callback'] = lambda x, f, context: path.append(np.array(x).copy())
-            da_params.update(kwargs)
-            res = optimize.dual_annealing(self.calculate_misfit, bounds=bounds, args=args, **da_params)
-
-        elif method == 'shgo':
-            shgo_params = {}
-            if quick: shgo_params.update({'n': 32, 'iters': 1})
-            if return_path: shgo_params['callback'] = callback
-            shgo_params.update(kwargs)
-            res = optimize.shgo(self.calculate_misfit, bounds=bounds, args=args, **shgo_params)
-
-        # 2. Local Solvers (scipy.optimize.minimize)
-        else:
-            if x0 is None:
-                x0 = [np.mean(b) for b in bounds]
-
-            min_params = {'method': method, 'bounds': bounds}
-            if return_path: min_params['callback'] = callback
-            min_params.update(kwargs)
-            res = optimize.minimize(self.calculate_misfit, x0=x0, args=args, **min_params)
-
-        if return_path:
-            res.path = np.array(path)
+        res = optimize_pt(
+            objective,
+            bounds,
+            method=method,
+            x0=x0,
+            uncertainty=uncertainty,
+            return_path=return_path,
+            quick=quick,
+            **kwargs,
+        )
 
         # 3. Final Modelled Composition
         # Calculate the actual composition at the best P-T point found.
@@ -124,4 +195,3 @@ class PhasePTEstimator(MAGEMinBase):
             res.modelled_composition = None
 
         return res
-

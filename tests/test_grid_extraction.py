@@ -141,6 +141,7 @@ class TestSolvusHelpers(unittest.TestCase):
 
     def test_extract_end_member_per_instance(self):
         self.assertAlmostEqual(extract_end_member('dio', self.out, 'di', 'mol'), 0.60)
+        self.assertAlmostEqual(extract_end_member('dio', self.out, 'di', 'wt'), 0.54)
         self.assertAlmostEqual(extract_end_member('dio', self.out, 'di', 'mol', instance=1), 0.40)
         vals = extract_end_member('dio', self.out, 'di', 'mol', instance='all')
         self.assertTrue(np.allclose(vals, [0.60, 0.40]))

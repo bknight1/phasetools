@@ -1,11 +1,50 @@
 import argparse
+import importlib
+import os
 import shutil
 import subprocess
 import sys
 
+# MAGEMin_C's dependency stack relies on WeakRefStrings' legacy PosLen API;
+# WeakRefStrings 1.4.3 requires Parsers 2.x and fails with Parsers 3.x.
+_PARSERS_VERSION = "2.8.3"
+_WEAKREFSTRINGS_VERSION = "1.4.3"
 
-def _run_julia(args):
-    return subprocess.run(["julia", *args], capture_output=True, text=True, check=False)
+
+def _juliacall_context():
+    """Return the Julia executable and project selected by juliacall/juliapkg."""
+    try:
+        juliapkg = importlib.import_module("juliapkg")
+        project = juliapkg.project()
+        executable = juliapkg.executable()
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not determine juliacall's Julia project and executable. "
+            "Ensure juliacall/juliapkg are installed and configured."
+        ) from exc
+
+    if not project:
+        raise RuntimeError("juliapkg did not provide a Julia project for juliacall.")
+    if not executable:
+        raise RuntimeError("juliapkg did not provide a Julia executable for juliacall.")
+
+    project = os.path.abspath(os.fspath(project))
+    if not os.path.isdir(project):
+        raise RuntimeError(f"juliacall's Julia project does not exist: {project}")
+    return os.fspath(executable), project
+
+
+def _run_julia(args, project=None, executable=None):
+    if project is None or executable is None:
+        resolved_executable, resolved_project = _juliacall_context()
+        executable = executable or resolved_executable
+        project = project or resolved_project
+    return subprocess.run(
+        [executable, f"--project={project}", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def check_julia_installed():
@@ -14,20 +53,64 @@ def check_julia_installed():
 
 
 def check_magemin_installed():
-    """Return True when Julia package MAGEMin_C can be imported."""
+    """Return True when MAGEMin_C loads through the phasetools Python bridge."""
     if not check_julia_installed():
         return False
-    result = _run_julia(["-e", 'using MAGEMin_C'])
+
+    try:
+        _executable, project = _juliacall_context()
+    except RuntimeError as exc:
+        print(f"Could not check MAGEMin_C: {exc}", file=sys.stderr)
+        return False
+
+    bridge_check = (
+        "from phasetools import MAGEMin_C; "
+        "assert MAGEMin_C is not None; "
+        "assert callable(MAGEMin_C.Initialize_MAGEMin)"
+    )
+    env = os.environ.copy()
+    env["JULIA_PROJECT"] = project
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", bridge_check],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    except OSError:
+        return False
     return result.returncode == 0
 
 
 def install_magemin():
-    """Install MAGEMin_C using Julia's package manager."""
+    """Install MAGEMin_C with compatible Parsers and WeakRefStrings releases."""
     if not check_julia_installed():
         raise RuntimeError("Julia is not available on PATH.")
-    result = _run_julia(["-e", 'using Pkg; Pkg.add("MAGEMin_C")'])
+
+    executable, project = _juliacall_context()
+
+    setup = (
+        "using Pkg; "
+        'Pkg.add([PackageSpec(name="MAGEMin_C"), '
+        f'PackageSpec(name="Parsers", version="{_PARSERS_VERSION}"), '
+        f'PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}")]); '
+        f'Pkg.pin(PackageSpec(name="Parsers", version="{_PARSERS_VERSION}")); '
+        f'Pkg.pin(PackageSpec(name="WeakRefStrings", version="{_WEAKREFSTRINGS_VERSION}"))'
+    )
+    result = _run_julia(["-e", setup], project=project, executable=executable)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "Julia package installation failed.")
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(details or "Julia package installation failed.")
+
+    # Pkg can return successfully while reporting a dependency precompile
+    # failure. Verify the actual package import in a fresh Julia process.
+    result = _run_julia(
+        ["-e", "using MAGEMin_C"], project=project, executable=executable
+    )
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(details or "MAGEMin_C could not be loaded after installation.")
 
 
 def print_status():

@@ -44,8 +44,12 @@ class PhaseFunctions(MAGEMinBase):
             raise RuntimeError("Phase search did not converge.")
         return result.root
     
-    def fractionate_phase(self, phase, out, sys_in, frac_amount=None):
+    @staticmethod
+    def fractionate_phase(phase, out, sys_in, frac_amount=None, *, phase_comp=None):
         """Perform batch fractionation of a phase from the bulk rock composition.
+
+        Stateless — uses only its arguments, so no calculator instance or
+        shared MAGEMin handle is required.
 
         Removes a specified fraction of a phase from the current bulk composition
         and renormalises the remainder. The output is always normalised to sum to 1
@@ -75,6 +79,14 @@ class PhaseFunctions(MAGEMinBase):
             Fraction of the phase to remove.  If ``None``, the full phase
             fraction from the minimisation result is used.  Values of 0 or
             less are treated as a no-op and return the current bulk unchanged.
+        phase_comp : array-like, keyword-only, optional
+            Explicit oxide composition of the phase to remove, replacing the
+            equilibrium composition read from ``out``.  Must be unit-sum and
+            aligned to the bulk oxide order **in the ``sys_in`` basis** (weight
+            fractions for ``'wt'``, molar for ``'mol'``).  The amount removed
+            still comes from ``frac_amount``/``out`` — only the composition of
+            what is removed changes.  Use to segregate a non-equilibrium
+            composition (e.g. MDF/parallel-tangent garnet) from the bulk.
 
         Returns
         -------
@@ -104,6 +116,16 @@ class PhaseFunctions(MAGEMinBase):
                 else:
                     ph_comp = np.array(out.PP_vec[pp_ind].Comp)
                     ph_frac = out.ph_frac[phase_ind]
+
+            if phase_comp is not None:
+                ph_comp = np.asarray(phase_comp, dtype=float)
+                if ph_comp.shape != np.asarray(current_X, dtype=float).shape:
+                    raise ValueError(
+                        f"phase_comp shape {ph_comp.shape} does not match "
+                        f"bulk shape {np.asarray(current_X, dtype=float).shape}"
+                    )
+            # else: keep the equilibrium ph_comp/ph_frac read above (SS_vec
+            # or PP_vec) — a second PP_vec read here broke solution phases.
 
             if frac_amount is None:
                 frac_amount = ph_frac

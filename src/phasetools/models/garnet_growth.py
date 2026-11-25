@@ -59,7 +59,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
                 Pi, Ti, ti,
                 r_min=10, r_max=100, 
                 garnet_classes=99, nR_diff=99, 
-                fractionate=False, normalise_start=True):
+                fractionate=False, normalise_start=True, mdf=False):
         """
         Generate the garnet data from MAGEMin.
         
@@ -80,20 +80,36 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         nR_diff : int, default=99
             Number of radial shells per garnet for compositional zoning.
         fractionate : bool, default=False
-            If True, fractionate garnet from the bulk composition as it grows.
+            If True, the garnet present at each P-T point is removed from the
+            reactive bulk **in full** before stepping on — instantaneous
+            segregation (Rayleigh fractionation as the path is refined;
+            Perple_X phase-fractionation semantics).  The returned
+            ``gt_*_frac`` arrays then hold the **cumulative segregated pile**
+            per basis, which is what drives the growth/cohort bookkeeping.
         normalise_start : bool, default=True
-            If True, the initial garnet volume is set to 0 and only new growth is modeled.
-            If False, the initial thermodynamic volume is used as the starting point.
+            If True, any garnet at the first P-T point is a retained seed:
+            it stays in the reactive bulk, is not counted in the pile, and
+            only growth beyond it is segregated (for a path starting outside
+            the garnet field the seed is zero anyway).  If False, the
+            initial thermodynamic garnet fraction is stripped from the bulk
+            at step 0 and counts as the start of the pile.
+        mdf : bool, default=False
+            **Experimental.**  Forwarded to :meth:`gt_along_path`.  When
+            True the composition of the reported and (with
+            ``fractionate=True``) segregated garnet follows the
+            maximum-driving-force / parallel-tangent model at each step,
+            while the garnet amounts driving the growth/cohort bookkeeping
+            stay equilibrium.  The MDF route is provisional for now and its
+            behaviour (supply capping, non-convergence handling) may change.
 
         Notes
         -----
-        When both ``fractionate=True`` and ``normalise_start=False``, the
-        initial garnet fraction is removed from the reactive bulk at the first
-        P-T point (overstepped nucleation).  Subsequent growth increments are
-        then fractionated from the depleted bulk.  When
-        ``normalise_start=True``, only new growth beyond the initial fraction
-        is modelled and fractionated; the initial garnet is treated as a
-        non-reactive seed.
+        With ``fractionate=True`` the reactive bulk is progressively
+        depleted, so later garnet grows from an effective (Rayleigh) bulk
+        and ``X_last_growth`` — the bulk handed to the retrograde
+        calculation — is that depleted composition.  With
+        ``fractionate=False`` the closed-system equilibrium is used
+        throughout and ``X_last_growth`` equals the original bulk.
         """
         
 
@@ -106,6 +122,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
         self.nR_diff = nR_diff
         self.fractionate = fractionate
         self.normalise_start = normalise_start
+        self.mdf = mdf
         self.X_last_growth = None
         self.first_growth_index = None
         self.last_growth_index = None
@@ -114,7 +131,7 @@ class GarnetGenerator(MAGEMinGarnetCalculator):
 
         ### calculate the garnet data over path
         (self.gt_mol_frac, self.gt_wt_frac, self.gt_vol_frac, self.Mgi, self.Mni, self.Fei, self.Cai, self.X_along_path) = self.gt_along_path(
-            self.Pi, self.Ti, fractionate=self.fractionate, normalise_start=self.normalise_start)
+            self.Pi, self.Ti, fractionate=self.fractionate, normalise_start=self.normalise_start, mdf=self.mdf)
 
 
         if self.normalise_start and self.gt_vol_frac[0] > 0:

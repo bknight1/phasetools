@@ -16,6 +16,8 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 - **sb24 iron handling:** Tests iron splitting for the sb24 mantle database, which includes metallic iron (`Fe(a)`) as a phase — requires different bookkeeping than silicate-only databases.
 - **Mg# robustness:** Validates that Mg# = Mg/(Mg+Fe²⁺) is computed correctly across different Fe components and databases. Mg# is the primary compositional metric for comparing model output to natural samples.
 - **K_D Fe-Mg logic:** Tests that the distribution coefficient K_D = (Fe²⁺/Mg)ᵠᵃʳⁿᵉᵗ / (Fe²⁺/Mg)ᶜᵖˣ is correctly calculated. K_D > 1 means garnet concentrates Fe²⁺ relative to cpx; K_D < 1 means the opposite.
+- **O-component route:** Fe³⁺ derives from MAGEMin's `Comp['O']` scaled to the APFU norm — pinned to be exact even when the APFU O lands on a whole number (where the floor rule would read zero excess) and zero when MAGEMin assigned no redox oxygen despite fractional APFU O; outputs without `Comp` fall back to the floor rule.
+- **SS/PP dispatch:** `get_oxide_apfu` reads solution phases from `SS_vec` and pure phases from `PP_vec`, so pure-phase APFU values (e.g. `q`, `ilm`) are real rather than silent zeros — including the Fe split of iron-bearing pure phases.
 
 ---
 
@@ -28,6 +30,48 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 - **FeOt vs Fe²⁺ basis:** Tests that `fe_basis='FeOt'` uses total iron (FeO + 2·Fe₂O₃) on the X-site and normalises to 1, while `fe_basis='Fe2+'` uses only the ferrous split. Both modes are needed depending on whether garnet Fe³⁺ is significant.
 - **`gt_along_path` fractionation:** Validates that garnet fractionation along a P–T path produces correct cumulative modes and X-site compositions, and that `X_along_path` is properly row-normalised.
 - **End-member extraction:** Confirms that garnet end-member fractions (pyrope, almandine, grossular, spessartine, kho) are correctly returned.
+
+---
+
+## `test_fractionation.py`
+
+**What this file proves:** `gt_along_path(fractionate=True)` implements full-fraction (Rayleigh / Perple_X-style) instantaneous segregation — the entire garnet present on the reactive bulk is removed at each P–T point — and reports the cumulative segregated pile per basis.
+
+### Key tests
+
+- **Full-fraction removal:** Each garnet-bearing step removes its *entire* current mode (minus the retained seed baseline when `normalise_start=True`), not a step-to-step or record-breaking increment. The discriminator: with a seed the second removal is `g₂ − seed`, where the old running-max scheme would give `g₂ − g₁`.
+- **Seed rules:** `normalise_start=True` retains the first-point garnet in the reactive bulk (never removed, not counted in the pile); `normalise_start=False` strips it at step 0 so every later step removes its full fraction.
+- **Cumulative pile per basis:** returned `gt_mol/wt/vol_frac` under fractionation are the monotone segregated pile as fractions of the original system, with each removal converted between mol/wt/vol via that step's equilibrium mode ratios; `pile[i] == 1 − Π(1 − f_k)` is checked independently.
+- **`fractionate=False` unchanged:** equilibrium modes are returned and `fractionate_phase` is never called.
+
+---
+
+## `test_gt_along_path_mdf.py`
+
+**What this file proves:** `gt_along_path(mdf=True)` correctly integrates the MDF/PTM growth model — state-shared helper, per-step MDF composition for reporting and segregation, supply-capped removals — without changing the `mdf=False` behaviour.
+
+### Key tests
+
+- **State sharing:** the `GarnetMDFCalculator` helper is constructed once, receives `_copy_state_to`, and is reused across runs; `mdf=False` never touches it.
+- **Cation reporting:** reported Mg-Mn-Fe-Ca come from `result.mdf` (atomic proportions, converted for `sys_in='wt'` to mirror the equilibrium path).
+- **Segregated composition:** `fractionate_phase` receives `phase_comp = mdf_oxide_wt` for `'wt'` and a unit-sum molar conversion for `'mol'`, while `frac_amount` stays the equilibrium mode.
+- **Supply cap:** when the MDF composition demands more of an oxide than the bulk holds (MnO typically limiting), the removal amount is scaled down (warning) and the bulk never goes negative.
+- **Absent garnet / robustness:** garnet-absent steps skip the MDF solve; all-zero cations on a wt basis return zeros instead of dividing by zero.
+- **Non-convergence policy:** a failed MDF solve warns and its composition is used.
+- **Forwarding:** `GarnetGenerator.generate_garnet_data(mdf=True)` passes the flag through.
+
+---
+
+## `test_state.py`
+
+**What this file proves:** MAGEMin handle ownership rules — `_copy_state_to` shares the C-side `data` handle without leaking it, and `finalize()` frees it exactly once on the owning instance.
+
+### Key tests
+
+- **State copy:** `_copy_state_to` transfers `db`/`dataset`/`verbose` alongside the standardised state and marks the target a non-owner (`_owns_data = False`).
+- **Construct-then-copy does not leak:** if the target owned a *different* handle, `_copy_state_to` finalises it (the orphaned ~40 MB C allocation is freed, not leaked).
+- **Owner finalises once:** `finalize()` calls `Finalize_MAGEMin` exactly once and is idempotent on subsequent calls.
+- **Non-owner is protected:** `finalize()` on a shared-handle instance warns and does not free the handle — the owner must finalise instead.
 
 ---
 
@@ -68,6 +112,21 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 
 ---
 
+## `test_incomplete_bulk.py`
+
+**What this file proves:** An empty `rm_list` skips MAGEMin phase removal and clears stale removal state; a non-empty list is passed to MAGEMin unchanged.
+
+## Kho-aware MDF cation tests
+
+`test_garnet_mdf.py` checks kho-aware exchange projections, closed
+Mg-Fe(total)-Mn-Ca cation proportions, active-model validation, wrapper state,
+and grid scan diagnostics without requiring Julia. The paired
+`test_garnet_mdf_live.py` checks MAGEMin-backed MDF and equilibrium
+outputs, including kho chemical-potential normalisation and Gamma projection
+on a shared formula basis when Julia + MAGEMin_C are available.
+
+---
+
 ## `test_magma_ocean.py` (live — requires Julia + MAGEMin_C)
 
 **What this file proves:** The `MagmaOcean` model's crystallisation path — equilibrium stage 0 followed by fractional stages 1–N — reproduces expected lunar magma ocean (LMO) behaviour.
@@ -91,8 +150,20 @@ Verification scripts and unit tests for the thermodynamic and chemical logic in 
 #### Tests
 
 - **`test_garnet_heuristic_across_pt`**
-  - **Checks:** Garnet Fe²⁺ = 3 × almandine fraction and Fe³⁺ = 2 × kho fraction (exact equality) across five P–T points.
+  - **Checks:** Garnet Fe²⁺ = 3 × almandine fraction and Fe³⁺ = 2 × kho fraction across five P–T points (places=4).
   - **Physical meaning:** Proves the heuristic correctly implements the a-x model's Fe split for garnet. In garnet (X₃Y₂Si₃O₁₂), the 3 Fe²⁺ atoms occupy the X-site and the 2 Fe³⁺ atoms occupy the Y-site. The heuristic recovers this site-specific partitioning without hard-coding end-member names.
+
+- **`test_cpx_heuristic_across_pt`**
+  - **Checks:** Clinopyroxene Fe³⁺ = acmm + 0.5 × jac and Fe²⁺ = hed + 0.5 × cfm across five P–T points (places=4).
+
+- **`test_mica_fe_split_matches_ferric_endmember`**
+  - **Checks:** Muscovite Fe³⁺ = fmu, Fe²⁺ = fcel, and FeO_apfu = fcel + fmu (total Fe), exactly.
+
+- **`test_ferric_chlorite_fe_split_matches_f3clin`**
+  - **Checks:** On the O-bearing S10 bulk at 20 kbar/550 °C, ferric chlorite's split equals the f3clin endmember fraction — also mirrored by the model's `f` compositional variable.
+
+- **`test_phase_fe_split_matches_magemin_system_fe3_fraction`**
+  - **Checks:** Pins MAGEMin's reported `Fe3_Fe2_ratio` = `2O/(FeO + 2O)` of the standardised bulk to machine precision; aggregates per-phase splits with `wt/Mw` weights (never `phase_frac('mol')` — not a formula-mole fraction) onto the physical `2O/FeO` identity (δ = 0.015) and MAGEMin's scalar (δ = 0.025); an O-free bulk reads exact zeros everywhere.
 
 - **`test_heuristic_mg_matches_site_fractions`**
   - **Checks:** Mg# computed from the heuristic matches Mg# computed from `siteFractions` (summed across all crystallographic sites) for both garnet and cpx, to floating-point precision.
