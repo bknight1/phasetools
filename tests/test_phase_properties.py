@@ -11,6 +11,7 @@ from phasetools.core.base import MAGEMinBase
 from phasetools.core.phase_properties import get_oxide_apfu, get_phase_fe_split
 
 
+
 class TestRedoxLogic(unittest.TestCase):
     def setUp(self):
         # Prevent Initialize_MAGEMin from calling Julia
